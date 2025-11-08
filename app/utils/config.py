@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     CHROMA_PATH: str = "./storage/vectordb"
 
     # LLM Configuration
-    LLM_PROVIDER: str = "mock"  # Options: "mock", "deepseek", "gemini", "openai"
+    LLM_PROVIDER: str = "gemini"  # Options: "mock", "deepseek", "gemini", "openai"
     
     # DeepSeek
     DEEPSEEK_API_KEY: str | None = None

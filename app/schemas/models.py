@@ -3,6 +3,7 @@ from typing import Any, List, Optional
 
 class AgentInvokeRequest(BaseModel):
     input: str
+    session_id: str = "default"
     context: dict[str, Any] | None = None
     tools: list[str] | None = None
     memory_keys: list[str] | None = None
@@ -13,10 +14,14 @@ class ToolCall(BaseModel):
     outputs: dict | None = None
 
 class AgentResponse(BaseModel):
-    answer: str
-    used_tools: List[ToolCall] = Field(default_factory=list)
+    type: str = "answer"  # "answer" or "clarification"
+    answer: str = ""
+    intents: List[dict] = Field(default_factory=list)
+    steps: List[dict] = Field(default_factory=list)  # Changed from List[str] to List[dict]
+    used_tools: List[dict] = Field(default_factory=list)  # Changed from List[ToolCall] to List[dict] for flexibility
     citations: List[dict] = Field(default_factory=list)
-    steps: List[str] = Field(default_factory=list)
+    message: Optional[str] = None  # For clarification type
+    options: Optional[List[str]] = None  # For clarification type
 
 class MemoryWrite(BaseModel):
     namespace: str
