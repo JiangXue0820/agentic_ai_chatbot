@@ -513,7 +513,7 @@ Plan the next step (return JSON)."""
                 input=data.get("input", {}),
                 observation=None,
                 status="planned",
-                decide_next=data.get("decide_next", True)
+                decide_next=data.get("decide_next", False)
             )
             
             return step
@@ -525,9 +525,21 @@ Plan the next step (return JSON)."""
     def _fallback_planning(self, intent: Intent) -> Step:
         """Simple fallback planning based on intent name."""
         action_map = {
-            "get_weather": ("weather", {"location": intent.slots.get("location", "Singapore")}),
-            "check_weather": ("weather", {"location": intent.slots.get("location", "Singapore")}),
-            "weather_query": ("weather", {"location": intent.slots.get("location", "Singapore")}),
+            "get_weather": ("weather", {
+                "location": intent.slots.get("location", "Singapore"),
+                "date": intent.slots.get("date"),
+                "days_offset": intent.slots.get("days_offset")
+            }),
+            "check_weather": ("weather", {
+                "location": intent.slots.get("location", "Singapore"),
+                "date": intent.slots.get("date"),
+                "days_offset": intent.slots.get("days_offset")
+            }),
+            "weather_query": ("weather", {
+                "location": intent.slots.get("location", "Singapore"),
+                "date": intent.slots.get("date"),
+                "days_offset": intent.slots.get("days_offset")
+            }),
             "summarize_emails": ("gmail", {"count": intent.slots.get("count", 5)}),
             "read_emails": ("gmail", {"count": intent.slots.get("count", 5)}),
             "check_emails": ("gmail", {"count": intent.slots.get("count", 5)}),
@@ -537,6 +549,9 @@ Plan the next step (return JSON)."""
         }
         
         action, inputs = action_map.get(intent.name, (None, {"query": intent.slots.get("query", "")}))
+        
+        # Clean up None values from inputs
+        inputs = {k: v for k, v in inputs.items() if v is not None}
         
         return Step(
             intent=intent.name,
@@ -551,16 +566,39 @@ Plan the next step (return JSON)."""
     def _format_observation(self, observation: Any) -> str:
         """Format tool observation for LLM context."""
         if isinstance(observation, dict):
-            # Format dict observations
+            # Handle error responses from tools
+            if "error" in observation:
+                return f"Error: {observation['error']}"
+            
+            # Format weather data
+            if "temperature" in observation and "condition" in observation:
+                loc = observation.get("location", "")
+                date = observation.get("date", "")
+                temp = observation.get("temperature")
+                humidity = observation.get("humidity")
+                condition = observation.get("condition")
+                
+                result = f"Weather in {loc}"
+                if date and date != "today":
+                    result += f" on {date}"
+                result += f": {temp}°C"
+                if humidity:
+                    result += f", {humidity}% humidity"
+                result += f", {condition}"
+                return result
+            
+            # Format other dict observations
             if "summary" in observation:
                 return f"Summary: {observation['summary']}"
             elif "results" in observation:
                 results = observation["results"]
-                if isinstance(results, list) and results:
-                    return f"Found {len(results)} results: {results[0] if results else 'None'}"
+                if isinstance(results, list):
+                    if not results:
+                        return "No relevant information found in the knowledge base."
+                    return f"Found {len(results)} results"
                 return f"Results: {str(results)[:200]}"
-            else:
-                return str(observation)[:300]
+            
+            return str(observation)[:300]
         elif isinstance(observation, str):
             return observation[:300]
         else:

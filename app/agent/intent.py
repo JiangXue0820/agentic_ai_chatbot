@@ -5,7 +5,10 @@
 
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, List
-
+import json
+import logging
+import re
+        
 
 @dataclass
 class Intent:
@@ -44,10 +47,7 @@ class IntentRecognizer:
           - List[Intent] if clear
           - Dict[type='clarification', message='...', options=[...]] if ambiguous
         """
-        import json
-        import logging
-        import re
-        
+
         logger = logging.getLogger(__name__)
         
         try:
@@ -179,19 +179,75 @@ If the query is ambiguous or confidence is low, set ambiguous=true."""
         text_lower = text.lower()
         
         # Weather keywords
-        weather_keywords = ["weather", "天气", "temperature", "温度", "forecast", "预报"]
+        weather_keywords = ["weather", "天气", "temperature", "温度", "forecast", "预报", "预测"]
         if any(kw in text_lower for kw in weather_keywords):
-            # Extract location
+            # Extract location (improved logic)
             location = "Singapore"  # default
-            # Simple location extraction
-            for word in text.split():
-                if word and len(word) > 2 and word[0].isupper():
-                    location = word
-                    break
+            
+            # Skip common question words and articles
+            skip_words = {"what", "what's", "whats", "where", "how", "when", "the", "is", "in", "at", "a", "an"}
+            
+            # Method 1: Use regex to find location after "in" or "at"
+            in_match = re.search(r'\b(?:in|at)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', text)
+            if in_match:
+                location = in_match.group(1)
+            else:
+                # Method 2: Look for capitalized words that aren't question words
+                for word in text.split():
+                    clean_word = word.strip("?!.,;:\"'")
+                    if (clean_word and 
+                        len(clean_word) > 2 and 
+                        clean_word[0].isupper() and 
+                        clean_word.lower() not in skip_words):
+                        location = clean_word
+                        break
+            
+            # Extract date/time information
+            date_info = None
+            days_offset = None
+            
+            if "tomorrow" in text_lower or "明天" in text_lower:
+                date_info = "tomorrow"
+                days_offset = 1
+            elif "yesterday" in text_lower or "昨天" in text_lower:
+                date_info = "yesterday"
+                days_offset = -1
+            elif "today" in text_lower or "now" in text_lower or "今天" in text_lower:
+                date_info = "today"
+                days_offset = 0
+            elif "next week" in text_lower or "下周" in text_lower:
+                date_info = "next week"
+                days_offset = 7
+            elif "last week" in text_lower or "上周" in text_lower:
+                date_info = "last week"
+                days_offset = -7
+            # Extract number of days (e.g., "in 3 days", "3 days ago")
+            elif re.search(r'in\s+(\d+)\s+days?', text_lower):
+                match = re.search(r'in\s+(\d+)\s+days?', text_lower)
+                days_offset = int(match.group(1))
+                date_info = f"in {days_offset} days"
+            elif re.search(r'(\d+)\s+days?\s+ago', text_lower):
+                match = re.search(r'(\d+)\s+days?\s+ago', text_lower)
+                days_offset = -int(match.group(1))
+                date_info = f"{abs(days_offset)} days ago"
+            elif re.search(r'(\d+)\s*天[后之]', text):
+                match = re.search(r'(\d+)\s*天[后之]', text)
+                days_offset = int(match.group(1))
+                date_info = f"{days_offset}天后"
+            elif re.search(r'(\d+)\s*天前', text):
+                match = re.search(r'(\d+)\s*天前', text)
+                days_offset = -int(match.group(1))
+                date_info = f"{days_offset}天前"
+            
+            slots = {"location": location}
+            if date_info:
+                slots["date"] = date_info
+            if days_offset is not None:
+                slots["days_offset"] = days_offset
             
             return [Intent(
                 name="get_weather",
-                slots={"location": location},
+                slots=slots,
                 confidence=0.75,
                 priority=0
             )]
