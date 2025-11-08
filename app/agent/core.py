@@ -1,12 +1,15 @@
 ﻿# =====================================================
 # app/agent/core.py
-# Agent Orchestrator — 增强版模板 (with max_rounds & natural output)
+# Agent Orchestrator — Final English Version
+# Integrated with LongTermMemoryStore and ReAct planning
 # =====================================================
 
-from typing import List, Dict, Any, Optional, Literal
+from typing import List, Dict, Any, Optional
 from dataclasses import asdict
+from datetime import datetime
 import logging
 import json
+
 from app.llm.provider import LLMProvider
 from app.tools.weather import WeatherAdapter
 from app.tools.gmail import GmailAdapter
@@ -14,8 +17,8 @@ from app.tools.vdb import VDBAdapter
 from app.memory.sqlite_store import SQLiteStore
 from app.agent.intent import Intent, IntentRecognizer
 from app.agent.toolkit import ToolRegistry
-from app.agent.memory import ShortTermMemory, SessionMemory
-from app.agent.planning import Step
+from app.agent.memory import ShortTermMemory, SessionMemory, LongTermMemoryStore
+from app.agent.planning import Step, PlanTrace
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +29,11 @@ class Agent:
 
     Responsibilities:
       - Intent recognition (LLM-based)
-      - ReAct-style planning with safe max_rounds
+      - ReAct-style planning with max_rounds safety
       - Tool invocation via ToolRegistry
-      - Memory integration (short/session)
-      - Human-in-the-loop clarification
-      - Natural language final answer
+      - Memory integration (short, session, long-term)
+      - Clarification and resume handling
+      - Natural language summarization
     """
 
     def __init__(self, max_rounds: int = 6, short_mem_limit: int = 5):
@@ -49,6 +52,7 @@ class Agent:
         self.mem = SQLiteStore()
         self.short_mem = ShortTermMemory(limit=short_mem_limit)
         self.session_mem = SessionMemory(self.mem)
+        self.longterm_mem = LongTermMemoryStore()
 
         # === Safety Control ===
         self.max_rounds = max_rounds
@@ -61,67 +65,65 @@ class Agent:
         """
         Main entry point for processing a user query.
         Pipeline:
-        1. Load context from short/session memory
-        2. Intent recognition (with possible clarification)
-        3. ReAct planning & execution
-        4. Update memories
-        5. Return structured response
+          1. Load short-term and session context
+          2. Retrieve long-term recall
+          3. Recognize intents (clarify if needed)
+          4. Plan and execute
+          5. Update memories
+          6. Return structured output
         """
         logger.info(f"Handling query for user {user_id}: {text[:100]}")
-        
-        # 1. Load context
-        context = self.short_mem.get_context()  # history of last few turns, defined by short_mem_limit
-        session_ctx = self.session_mem.read(user_id, session_id, "context")
-        
-        # Restore context from session if available
-        if session_ctx:
-            try:
-                if isinstance(session_ctx, str):
-                    session_data = json.loads(session_ctx)
-                else:
-                    session_data = session_ctx
-                logger.info(f"Loaded session context with {len(session_data.get('conversation_history', []))} messages")
-            except (json.JSONDecodeError, TypeError) as e:
-                logger.warning(f"Failed to parse session context: {e}")
-                session_data = {}
-        else:
-            session_data = {}
 
-        # 2. Intent recognition
-        intents = self._recognize_intents(text, context)
+        # === 1. Load memory context ===
+        context = self.short_mem.get_context()
+        session_ctx = self.session_mem.read(user_id, session_id, "context")
+
+        session_data = {}
+        if isinstance(session_ctx, list) and len(session_ctx) > 0:
+            session_ctx = session_ctx[-1].get("content", "{}")
+        try:
+            if isinstance(session_ctx, str):
+                session_data = json.loads(session_ctx)
+        except Exception as e:
+            logger.warning(f"Failed to parse session context: {e}")
+
+        # === 2. Retrieve long-term recall ===
+        longterm_context = self.longterm_mem.search(text, top_k=3)
+        merged_context = self._merge_context(context, longterm_context)
+
+        # === 3. Intent recognition ===
+        intents = self._recognize_intents(text, merged_context)
         if isinstance(intents, dict) and intents.get("type") == "clarification":
-            # Save pending context for resume
             pending_context = {
                 "clarification_type": "intent_ambiguous",
                 "original_query": text,
                 "pending_intents": [],
                 "pending_steps": [],
-                "timestamp": str(json.dumps({}))  # Placeholder for now
+                "timestamp": datetime.now().isoformat()
             }
             self.session_mem.write(user_id, session_id, "pending_context", json.dumps(pending_context))
             logger.info("Saved pending context for intent clarification")
-            return intents  # pause for human clarification
+            return intents
 
-        # 3️⃣ Execute planning
-        result = self._plan_and_execute(user_id, text, intents, context)
+        # === 4. Plan and execute ===
+        result = self._plan_and_execute(user_id, text, intents, merged_context)
         if result.get("type") == "clarification":
-            # Save pending context for resume
+            result["steps"] = result.get("steps", [])
+            result["intents"] = [asdict(i) for i in intents] if isinstance(intents, list) else []
             pending_context = {
                 "clarification_type": "tool_failed",
                 "original_query": text,
-                "pending_intents": [asdict(i) for i in intents] if isinstance(intents, list) else [],
-                "pending_steps": result.get("steps", []),
-                "timestamp": str(json.dumps({}))
+                "pending_intents": result["intents"],
+                "pending_steps": result["steps"],
+                "timestamp": datetime.now().isoformat()
             }
             self.session_mem.write(user_id, session_id, "pending_context", json.dumps(pending_context))
-            logger.info("Saved pending context for tool failure clarification")
-            return result  # triggered clarification mid-process
+            return result
 
-        # 4️⃣ Update memory
+        # === 5. Update memories ===
         self.short_mem.add("user", text)
         self.short_mem.add("assistant", result.get("answer", ""))
-        
-        # Serialize and save session context
+
         session_data = {
             "last_intents": [asdict(i) for i in intents] if isinstance(intents, list) else [],
             "last_steps": result.get("steps", []),
@@ -129,291 +131,144 @@ class Agent:
             "clarification_pending": None
         }
         self.session_mem.write(user_id, session_id, "context", json.dumps(session_data), None)
-        
-        # Write to SQLite for long-term storage (24 hour TTL)
-        self.mem.write(user_id, session_id, "short", text, 86400)
-        
-        logger.info("Updated memories successfully")
 
-        # 5️⃣ Return final structured output
+        snapshot = self.session_mem.to_longterm_snapshot(user_id, session_id)
+        if snapshot:
+            self.longterm_mem.store_conversation(user_id, session_id, snapshot)
+
+        logger.info("Memory updated successfully.")
         return result
 
     def resume(self, user_id: str, user_reply: str, session_id: str = "default") -> Dict:
         """
         Called when user answers a clarification prompt.
-        Should update the pending intent/step and continue execution.
+        Resumes execution using the saved pending context.
         """
-        logger.info(f"Resuming conversation for user {user_id}, reply: {user_reply[:50]}")
-        
+        logger.info(f"Resuming conversation for {user_id}: {user_reply[:80]}")
+
         try:
-            # Load pending context from session memory
             context_data = self.session_mem.read(user_id, session_id, "pending_context")
-            
             if not context_data:
-                logger.warning("No pending context found for resume")
-                return {
-                    "type": "answer",
-                    "answer": "抱歉，我找不到待处理的对话上下文。请重新开始对话。"
-                }
-            
-            # Parse context data
-            try:
-                if isinstance(context_data, str):
-                    context_json = json.loads(context_data)
-                else:
-                    context_json = context_data
-            except (json.JSONDecodeError, TypeError) as e:
-                logger.error(f"Failed to parse context data: {e}")
-                return {
-                    "type": "answer",
-                    "answer": "抱歉，对话上下文数据损坏。请重新开始对话。"
-                }
-            
-            # Extract pending information
-            clarification_type = context_json.get("clarification_type", "unknown")
+                return {"type": "answer", "answer": "No pending clarification found. Please start a new query."}
+
+            context_json = json.loads(context_data) if isinstance(context_data, str) else context_data
+            clarification_type = context_json.get("clarification_type", "")
             original_query = context_json.get("original_query", "")
-            pending_intents = context_json.get("pending_intents", [])
-            pending_steps = context_json.get("pending_steps", [])
-            
-            logger.info(f"Resuming with clarification_type: {clarification_type}")
-            
-            # Handle different clarification types
+
             if clarification_type == "intent_ambiguous":
-                # User provided clarification for ambiguous intent
-                # Re-recognize intent with the new reply as context
                 context = self.short_mem.get_context()
                 context.append({"role": "user", "content": user_reply})
-                
                 intents = self._recognize_intents(user_reply, context)
-                
-                if isinstance(intents, dict) and intents.get("type") == "clarification":
-                    # Still ambiguous, return clarification again
-                    return intents
-                
-                # Clear pending context and execute with new intents
                 self.session_mem.write(user_id, session_id, "pending_context", None)
-                result = self._plan_and_execute(user_id, user_reply, intents, context)
-                
-                # Update memories
-                self.short_mem.add("user", user_reply)
-                self.short_mem.add("assistant", result.get("answer", ""))
-                
-                return result
-                
+                return self._plan_and_execute(user_id, user_reply, intents, context)
+
             elif clarification_type == "tool_failed":
-                # User chose to retry or abandon
-                if "重试" in user_reply or "retry" in user_reply.lower():
-                    # Retry the original query
+                if "retry" in user_reply.lower():
                     self.session_mem.write(user_id, session_id, "pending_context", None)
                     return self.handle(user_id, original_query, session_id)
                 else:
-                    # Abandon
                     self.session_mem.write(user_id, session_id, "pending_context", None)
-                    return {
-                        "type": "answer",
-                        "answer": "好的，已取消操作。有什么其他可以帮助您的吗？"
-                    }
-            
-            elif clarification_type == "low_confidence":
-                # User provided more details
-                # Combine original query with new details
-                combined_query = f"{original_query} {user_reply}"
-                
-                self.session_mem.write(user_id, session_id, "pending_context", None)
-                return self.handle(user_id, combined_query, session_id)
-            
+                    return {"type": "answer", "answer": "Okay, operation cancelled. Anything else I can help with?"}
+
             else:
-                # Unknown clarification type, treat as new query
-                logger.warning(f"Unknown clarification type: {clarification_type}")
                 self.session_mem.write(user_id, session_id, "pending_context", None)
                 return self.handle(user_id, user_reply, session_id)
-                
+
         except Exception as e:
             logger.error(f"Resume failed: {e}", exc_info=True)
-            return {
-                "type": "answer",
-                "answer": f"抱歉，恢复对话时出现错误：{str(e)}"
-            }
+            return {"type": "answer", "answer": f"An error occurred while resuming: {e}"}
 
     # =====================================================
     # === Internal Methods ===
     # =====================================================
 
     def _recognize_intents(self, text: str, context: List[Dict[str, str]]) -> List[Intent] | Dict:
-        """
-        Use LLM to extract structured intents.
-        Return:
-          - List[Intent] if clear
-          - Dict[type='clarification', message=..., options=...] if ambiguous
-        """
-        logger.info(f"Recognizing intents for text: {text[:100]}")
-        
+        """Use LLM to identify structured intents."""
         try:
-            # Use IntentRecognizer to analyze the query
             result = self.intent_recognizer.recognize(text, context)
-            
-            # Check if result is a clarification dict
             if isinstance(result, dict) and result.get("type") == "clarification":
-                logger.info("Intent recognition requires clarification")
                 return result
-            
-            # Otherwise should be List[Intent]
             if isinstance(result, list):
-                logger.info(f"Recognized {len(result)} intent(s): {[i.name for i in result]}")
                 return result
-            
-            # Unexpected format, return error as clarification
-            logger.warning(f"Unexpected intent recognition result format: {type(result)}")
             return {
                 "type": "clarification",
-                "message": "抱歉，我无法理解您的请求。请更清楚地描述您的需求。",
-                "options": ["查询天气", "查看邮件", "搜索知识库"]
+                "message": "I’m not sure what you mean. Please clarify:",
+                "options": ["Check weather", "Read emails", "Search knowledge base"]
             }
-            
         except Exception as e:
             logger.error(f"Intent recognition failed: {e}", exc_info=True)
             return {
                 "type": "clarification",
-                "message": f"处理您的请求时出现错误：{str(e)}",
-                "options": ["重试", "换个问题"]
+                "message": "An error occurred while interpreting your request.",
+                "options": ["Retry", "Rephrase"]
             }
 
     def _plan_and_execute(
         self, user_id: str, user_query: str, intents: List[Intent], context: List[Dict[str, str]]
     ) -> Dict:
-        """
-        Core ReAct planning & execution loop with max_rounds safety.
-        """
-        logger.info(f"Starting plan and execute for {len(intents)} intent(s)")
-        
-        steps: List[Step] = []
-        used_tools: List[Dict[str, Any]] = []
-        citations: List[Dict[str, Any]] = []
-        observations: List[str] = []
-        round_count = 0
+        """Main ReAct-style reasoning and tool execution loop."""
+        steps, used_tools, citations, observations = [], [], [], []
+        trace = PlanTrace(user_query=user_query)  
 
         for intent in intents:
-            logger.info(f"Processing intent: {intent.name}")
+            round_count = 0
             done = False
-            
+
             while not done and round_count < self.max_rounds:
                 round_count += 1
-                logger.info(f"Round {round_count}/{self.max_rounds}")
-
-                # === Step 1: Ask LLM for next action plan ===
                 step = self._plan_next_step(intent, user_query, steps, observations, context)
-                
                 if not step:
-                    # Planning failed, break
-                    logger.warning("Planning failed, cannot generate next step")
                     done = True
                     break
-                
-                logger.info(f"Planned step - Action: {step.action}, Thought: {step.thought[:100]}")
 
-                # === Step 2: Execute Tool if needed ===
                 if step.action and step.action != "finish":
-                    step.status = "running"
                     try:
-                        logger.info(f"Invoking tool: {step.action} with inputs: {step.input}")
                         observation = self.tools.invoke(step.action, **step.input)
                         step.observation = observation
                         step.status = "succeeded"
-                        
-                        # Format observation for LLM context
                         obs_str = self._format_observation(observation)
                         observations.append(obs_str)
-                        
                         used_tools.append({
                             "name": step.action,
                             "inputs": step.input,
                             "outputs": observation,
                             "status": "succeeded"
                         })
-                        
-                        # Extract citations if available
-                        if isinstance(observation, dict):
-                            if "results" in observation and isinstance(observation["results"], list):
-                                for item in observation["results"]:
-                                    if isinstance(item, dict) and "metadata" in item:
-                                        citations.append(item["metadata"])
-                        
-                        logger.info(f"Tool execution succeeded: {obs_str[:100]}")
-                        
                     except Exception as e:
-                        logger.error(f"Tool execution failed: {e}", exc_info=True)
                         step.status = "failed"
-                        step.error = str(e)
-                        used_tools.append({
-                            "name": step.action,
-                            "inputs": step.input,
-                            "outputs": {},
-                            "status": "failed",
-                            "error": str(e),
-                        })
-                        
-                        # Decide whether to retry or ask user
-                        observations.append(f"Tool {step.action} failed: {str(e)}")
-                        
-                        # For now, return clarification (can be enhanced to retry)
+                        trace.add_step(step)  # ✅ record even failed step
                         return {
                             "type": "clarification",
-                            "message": f"执行工具 {step.action} 时出错：{e}\n是否要重试？",
-                            "options": ["重试", "放弃"],
+                            "message": f"Tool {step.action} failed: {e}. Retry?",
+                            "options": ["Retry", "Cancel"],
+                            "steps": [asdict(s) for s in steps],
+                            "intents": [asdict(i) for i in intents],
+                            "trace": trace.to_dict()  # ✅ new field
                         }
-                elif step.action is None and intent.name == "general_qa":
-                    # No tool needed - direct LLM interaction
-                    step.status = "running"
-                    logger.info("Processing general_qa intent - direct LLM interaction")
-                    try:
-                        # Use LLM directly for general questions
-                        qa_response = self._direct_llm_qa(user_query, context)
-                        step.observation = {"answer": qa_response}
-                        step.status = "succeeded"
-                        observations.append(qa_response)
-                        logger.info(f"Direct LLM QA succeeded: {qa_response[:100]}")
-                    except Exception as e:
-                        logger.error(f"Direct LLM QA failed: {e}", exc_info=True)
-                        step.status = "failed"
-                        step.error = str(e)
-                        observations.append(f"QA failed: {str(e)}")
-                else:
-                    # No action or finish action - mark as finished
-                    step.status = "finished"
-                    logger.info("Step marked as finished (no action or finish action)")
+                elif intent.name == "general_qa":
+                    qa_response = self._direct_llm_qa(user_query, context)
+                    step.observation = {"answer": qa_response}
+                    step.status = "succeeded"
+                    observations.append(qa_response)
 
-                steps.append(step)
+                trace.add_step(step)   # ✅ replaces steps.append(step)
+                steps.append(step)     # keep legacy list for backward compatibility
 
-                # === Step 3: Check exit condition ===
                 if step.status == "finished" or step.action == "finish" or not step.decide_next:
                     done = True
-                    logger.info("Intent execution completed")
-                    break
-                
-                if step.status == "failed":
-                    done = True
-                    logger.warning("Intent execution failed")
-                    break
 
-            # === Max rounds reached ===
             if round_count >= self.max_rounds:
-                logger.warning(f"Max rounds ({self.max_rounds}) reached")
-                fail_message = (
-                    "我尝试了多次规划，但未能完成任务，请重新描述您的问题。"
-                )
                 return {
                     "type": "answer",
-                    "answer": fail_message,
+                    "answer": "I reached the reasoning limit but couldn't complete the task. Please restate your question.",
                     "intents": [asdict(i) for i in intents],
                     "steps": [asdict(s) for s in steps],
                     "used_tools": used_tools,
                     "citations": citations,
+                    "trace": trace.to_dict(),  
                 }
 
-        # === Step 4: Summarize final result in natural language ===
-        logger.info("Generating final answer from observations")
         answer = self._summarize_result(user_query, steps, observations)
-
         return {
             "type": "answer",
             "answer": answer,
@@ -421,325 +276,158 @@ class Agent:
             "steps": [asdict(s) for s in steps],
             "used_tools": used_tools,
             "citations": citations,
+            "trace": trace.to_dict(),  
         }
-    
+
+    # =====================================================
+    # === Planning Logic (Step-related)
+    # =====================================================
+
     def _plan_next_step(
-        self, 
-        intent: Intent, 
-        user_query: str, 
-        previous_steps: List[Step],
-        observations: List[str],
-        context: List[Dict[str, str]]
+        self, intent: Intent, user_query: str, previous_steps: List[Step],
+        observations: List[str], context: List[Dict[str, str]]
     ) -> Optional[Step]:
-        """
-        Use LLM to plan the next step based on intent and previous steps.
-        """
+        """Use LLM to plan the next reasoning step."""
         try:
-            # Get tool descriptions
-            tool_descriptions = self.tools.describe()
-            
-            # Build prompt for planning
-            system_prompt = f"""You are a planning assistant. Based on the user's intent and previous steps, decide the next action.
+            tool_info = self.tools.describe()
+            system_prompt = f"""
+You are a reasoning assistant that plans step-by-step actions to complete user intents.
+You have access to these tools:
+{json.dumps(tool_info, indent=2)}
 
-Available tools:
-{json.dumps(tool_descriptions, indent=2)}
-
-You must respond with a JSON object with this structure:
+Respond in JSON:
 {{
-  "thought": "reasoning about what to do next",
-  "action": "tool_name or 'finish' if done",
-  "input": {{"param1": "value1"}},
+  "thought": "your reasoning on what to do next",
+  "action": "tool_name or 'finish'",
+  "input": {{ "param": "value" }},
   "decide_next": true/false
 }}
-
-If the task is complete, set action to "finish" and decide_next to false."""
-
-            # Build context from previous steps
+"""
             steps_context = ""
             if previous_steps:
-                steps_context = "\n\nPrevious steps:\n"
-                for i, step in enumerate(previous_steps[-3:], 1):  # Last 3 steps
-                    steps_context += f"{i}. Action: {step.action}, Status: {step.status}\n"
-                    if step.observation:
-                        obs_preview = str(step.observation)[:100]
-                        steps_context += f"   Observation: {obs_preview}\n"
-            
-            # Build observations context
-            obs_context = ""
-            if observations:
-                obs_context = f"\n\nObservations so far:\n" + "\n".join(observations[-3:])
-            
-            user_prompt = f"""User query: {user_query}
-Current intent: {intent.name}
-Intent slots: {json.dumps(intent.slots)}
-{steps_context}{obs_context}
+                for i, step in enumerate(previous_steps[-3:], 1):
+                    steps_context += f"{i}. {step.action} ({step.status})\n"
 
-Plan the next step (return JSON)."""
+            user_prompt = f"""
+User query: {user_query}
+Current intent: {intent.name}
+Slots: {json.dumps(intent.slots)}
+Previous steps:
+{steps_context}
+Recent observations:
+{observations[-3:] if observations else []}
+"""
 
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": user_prompt},
             ]
-            
-            # Call LLM
             response = self.llm.chat(messages)
-            logger.info(f"Planning LLM response: {response[:200]}")
-            
-            # Parse response
             return self._parse_planning_response(response, intent)
-            
+
         except Exception as e:
             logger.error(f"Planning failed: {e}", exc_info=True)
-            
-            # Fallback: use simple intent-to-action mapping
             return self._fallback_planning(intent)
-    
+
     def _parse_planning_response(self, response: str, intent: Intent) -> Optional[Step]:
-        """Parse LLM planning response into a Step object."""
+        """Parse LLM planning output into a Step object."""
         try:
-            # Extract JSON from response
             json_str = response.strip()
             if "```json" in json_str:
                 json_str = json_str.split("```json")[1].split("```")[0].strip()
-            elif "```" in json_str:
-                json_str = json_str.split("```")[1].split("```")[0].strip()
-            
             data = json.loads(json_str)
-            
-            step = Step(
+            return Step(
                 intent=intent.name,
-                thought=data.get("thought", "No thought provided"),
+                thought=data.get("thought", ""),
                 action=data.get("action"),
                 input=data.get("input", {}),
                 observation=None,
                 status="planned",
-                decide_next=data.get("decide_next", False)
+                decide_next=bool(data.get("decide_next", False)),
             )
-            
-            return step
-            
-        except (json.JSONDecodeError, KeyError) as e:
+        except Exception as e:
             logger.warning(f"Failed to parse planning response: {e}")
             return self._fallback_planning(intent)
-    
+
     def _fallback_planning(self, intent: Intent) -> Step:
-        """Simple fallback planning based on intent name."""
-        action_map = {
-            "get_weather": ("weather", {
-                "location": intent.slots.get("location", "Singapore"),
-                "date": intent.slots.get("date"),
-                "days_offset": intent.slots.get("days_offset")
-            }),
-            "check_weather": ("weather", {
-                "location": intent.slots.get("location", "Singapore"),
-                "date": intent.slots.get("date"),
-                "days_offset": intent.slots.get("days_offset")
-            }),
-            "weather_query": ("weather", {
-                "location": intent.slots.get("location", "Singapore"),
-                "date": intent.slots.get("date"),
-                "days_offset": intent.slots.get("days_offset")
-            }),
+        """Fallback when planning fails."""
+        mapping = {
+            "get_weather": ("weather", {"city": intent.slots.get("location", "Singapore")}),
             "summarize_emails": ("gmail", {"count": intent.slots.get("count", 5)}),
-            "read_emails": ("gmail", {"count": intent.slots.get("count", 5)}),
-            "check_emails": ("gmail", {"count": intent.slots.get("count", 5)}),
             "query_knowledge": ("vdb", {"query": intent.slots.get("query", "")}),
-            "search_knowledge": ("vdb", {"query": intent.slots.get("query", "")}),
-            "general_qa": (None, {"query": intent.slots.get("query", "")}),  # No tool, direct LLM
+            "general_qa": (None, {"query": intent.slots.get("query", "")}),
         }
-        
-        action, inputs = action_map.get(intent.name, (None, {"query": intent.slots.get("query", "")}))
-        
-        # Clean up None values from inputs
-        inputs = {k: v for k, v in inputs.items() if v is not None}
-        
+        action, inputs = mapping.get(intent.name, (None, {"query": ""}))
+        inputs = {k: v for k, v in inputs.items() if v}
         return Step(
             intent=intent.name,
-            thought=f"Direct mapping: {intent.name} -> {action if action else 'direct_llm'}",
+            thought=f"Fallback planning: {intent.name} → {action or 'direct LLM'}",
             action=action,
             input=inputs,
             observation=None,
             status="planned",
-            decide_next=False  # Single-step fallback
+            decide_next=False,
         )
-    
-    def _format_observation(self, observation: Any) -> str:
-        """Format tool observation for LLM context."""
-        if isinstance(observation, dict):
-            # Handle error responses from tools
-            if "error" in observation:
-                return f"Error: {observation['error']}"
-            
-            # Format weather data
-            if "temperature" in observation and "condition" in observation:
-                loc = observation.get("location", "")
-                date = observation.get("date", "")
-                temp = observation.get("temperature")
-                humidity = observation.get("humidity")
-                condition = observation.get("condition")
-                
-                result = f"Weather in {loc}"
-                if date and date != "today":
-                    result += f" on {date}"
-                result += f": {temp}°C"
-                if humidity:
-                    result += f", {humidity}% humidity"
-                result += f", {condition}"
-                return result
-            
-            # Format other dict observations
-            if "summary" in observation:
-                return f"Summary: {observation['summary']}"
-            elif "results" in observation:
-                results = observation["results"]
-                if isinstance(results, list):
-                    if not results:
-                        return "No relevant information found in the knowledge base."
-                    return f"Found {len(results)} results"
-                return f"Results: {str(results)[:200]}"
-            
-            return str(observation)[:300]
-        elif isinstance(observation, str):
-            return observation[:300]
-        else:
-            return str(observation)[:300]
 
     # =====================================================
-    # === Helper Methods ===
+    # === Summarization & Helpers
     # =====================================================
+
+    def _format_observation(self, observation: Any) -> str:
+        """Format tool output for readability."""
+        if isinstance(observation, dict):
+            if "results" in observation and isinstance(observation["results"], list):
+                if not observation["results"]:
+                    return "No relevant results found."
+                return f"Found {len(observation['results'])} relevant items."
+            if "temperature" in observation:
+                loc = observation.get("location", "")
+                return f"Weather in {loc}: {observation['temperature']}°C, {observation.get('condition', '')}"
+            return str(observation)
+        return str(observation)[:300]
 
     def _direct_llm_qa(self, user_query: str, context: List[Dict[str, str]]) -> str:
-        """
-        Direct LLM interaction for general QA without tools.
-        
-        Args:
-            user_query: User's question
-            context: Conversation history
-            
-        Returns:
-            LLM's response
-        """
-        logger.info(f"Direct LLM QA for: {user_query[:100]}")
-        
+        """Direct QA mode (no tool invocation)."""
         try:
-            # Build context from conversation history
-            messages = []
-            
-            # System prompt defining the agent's capabilities
-            system_prompt = """You are a helpful and knowledgeable AI assistant. You can:
-- Answer general knowledge questions
-- Explain concepts and ideas
-- Provide information on a wide range of topics
-- Have friendly conversations
-- Assist with problem-solving and brainstorming
-
-Respond naturally and helpfully. Use the same language as the user's question (Chinese or English).
-Be concise but informative. If you don't know something, say so honestly."""
-            
-            messages.append({"role": "system", "content": system_prompt})
-            
-            # Add recent conversation context (last 3 turns)
-            for msg in context[-6:]:  # Last 3 user+assistant pairs
-                messages.append(msg)
-            
-            # Add current query
+            system_prompt = (
+                "You are a helpful assistant. Answer naturally and clearly in the same language as the user."
+            )
+            messages = [{"role": "system", "content": system_prompt}]
+            messages += context[-6:]
             messages.append({"role": "user", "content": user_query})
-            
-            # Get LLM response
-            response = self.llm.chat(messages)
-            logger.info(f"LLM response: {response[:100]}")
-            
-            return response
-            
+            return self.llm.chat(messages)
         except Exception as e:
-            logger.error(f"Direct LLM QA failed: {e}", exc_info=True)
-            return f"抱歉，我在处理您的问题时遇到了错误：{str(e)}"
-    
-    def _summarize_result(
-        self, user_query: str, steps: List[Step], observations: List[str]
-    ) -> str:
-        """
-        Ask the LLM to turn tool observations into a natural-language summary.
-        """
-        logger.info("Summarizing results into natural language")
-        
+            logger.error(f"Direct QA failed: {e}", exc_info=True)
+            return f"Sorry, an error occurred: {e}"
+
+    def _summarize_result(self, user_query: str, steps: List[Step], observations: List[str]) -> str:
+        """Use LLM to summarize final answer."""
+        if not observations:
+            return "I couldn't find relevant information for your question."
+        system_prompt = (
+            "You are a helpful assistant. Combine the gathered information into a clear, natural summary."
+        )
+        summary_context = f"User query: {user_query}\n\n" + "\n".join(observations[-5:])
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": summary_context},
+        ]
         try:
-            # If no observations, return a default message
-            if not observations:
-                logger.warning("No observations to summarize")
-                return "我暂时没有找到相关信息，请尝试更详细地描述您的需求。"
-            
-            # Check if this is a direct QA response (no tool used)
-            if len(steps) == 1 and steps[0].action is None:
-                # Already a natural language answer from direct LLM QA
-                if observations and len(observations) > 0:
-                    return observations[0]
-            
-            # Build comprehensive context from steps and observations
-            context_parts = []
-            context_parts.append(f"用户问题：{user_query}")
-            context_parts.append(f"\n执行了 {len(steps)} 个步骤，获得以下信息：")
-            
-            # Focus on observations, not the technical steps
-            for i, obs in enumerate(observations, 1):
-                context_parts.append(f"\n信息 {i}: {obs}")
-            
-            context_str = "\n".join(context_parts)
-            
-            # Create prompt for natural language summarization
-            system_prompt = """You are a helpful AI assistant. Convert the information gathered from various sources into a natural, conversational response.
-
-Requirements:
-1. Answer the user's question directly - don't repeat their question
-2. Use clear, natural language - avoid technical jargon
-3. Combine multiple pieces of information into a cohesive answer
-4. Match the language of the user's question (Chinese or English)
-5. Be friendly and professional
-6. If the information is empty or insufficient, suggest alternatives
-
-DO NOT output raw data or JSON. Always provide a human-friendly response."""
-
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": context_str}
-            ]
-            
-            answer = self.llm.chat(messages)
-            
-            # Check if LLM is in mock mode
-            if answer.startswith("(mocked-llm)") or "mocked" in answer.lower():
-                logger.warning("LLM in mock mode, using fallback formatting")
-                # Use better fallback formatting
-                return self._format_fallback_answer(user_query, observations)
-            
-            logger.info(f"Generated answer: {answer[:100]}")
-            return answer
-            
+            return self.llm.chat(messages)
         except Exception as e:
             logger.error(f"Summarization failed: {e}", exc_info=True)
             return self._format_fallback_answer(user_query, observations)
-    
+
     def _format_fallback_answer(self, user_query: str, observations: List[str]) -> str:
-        """
-        Format a fallback answer when LLM summarization fails or is in mock mode.
-        """
+        """Fallback answer when summarization fails."""
         if not observations:
-            return "我暂时没有找到相关信息。"
-        
-        # Detect language
-        is_chinese = any('\u4e00' <= c <= '\u9fff' for c in user_query)
-        
-        if len(observations) == 1:
-            return observations[0]
-        
-        # Multiple observations - format as list
-        if is_chinese:
-            answer = "根据查询结果：\n\n"
-            for i, obs in enumerate(observations, 1):
-                answer += f"• {obs}\n"
-        else:
-            answer = "Based on the query results:\n\n"
-            for i, obs in enumerate(observations, 1):
-                answer += f"• {obs}\n"
-        
-        return answer.strip()
+            return "No information available."
+        return "Based on the gathered information:\n" + "\n".join(f"- {obs}" for obs in observations[-5:])
+
+    def _merge_context(self, short_context: List[Dict[str, str]], longterm_context: List[Dict[str, Any]]):
+        """Merge short-term context with semantic long-term memory."""
+        merged = list(short_context)
+        if longterm_context:
+            memory_summary = "\n".join([f" Previous memory: {c['chunk']}" for c in longterm_context])
+            merged.append({"role": "system", "content": memory_summary})
+        return merged

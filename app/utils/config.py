@@ -7,6 +7,36 @@ from pydantic_settings import BaseSettings
 env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
+# =====================================================
+# Storage Configuration
+# =====================================================
+
+BASE_STORAGE_DIR: str = os.getenv("STORAGE_DIR", "./storage")
+
+# --- Session Memory (SQLite-based) ---
+SESSION_MEM_PATH: str = os.path.join(BASE_STORAGE_DIR, "memory/sessionMem/mvp.db")
+
+# --- Long-Term Memory (VectorDB backend) ---
+LONGTERM_BACKEND: str = "chroma"
+LONGTERM_PATH: str = os.path.join(BASE_STORAGE_DIR, "memory/longtermMem")
+
+# --- Knowledge Base (Documents / Embeddings) ---
+KNOWLEDGE_BACKEND: str = "chroma"
+KNOWLEDGE_PATH: str = os.path.join(BASE_STORAGE_DIR, "knowledgebase")
+
+# --- Create dirs automatically if missing ---
+# Create directory for SESSION_MEM_PATH (it's a file path, so get parent dir)
+os.makedirs(os.path.dirname(SESSION_MEM_PATH), exist_ok=True)
+# Create directories for LONGTERM_PATH and KNOWLEDGE_PATH (they are directory paths)
+os.makedirs(LONGTERM_PATH, exist_ok=True)
+os.makedirs(KNOWLEDGE_PATH, exist_ok=True)
+
+# =====================================================
+# Other constants
+# =====================================================
+DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
+DEFAULT_TEMPERATURE: float = float(os.getenv("DEFAULT_TEMPERATURE", "0.7"))
+
 class Settings(BaseSettings):
     API_TOKEN: str = "changeme"
     CORS_ALLOW_ORIGINS: list[str] = ["*"]
@@ -19,18 +49,18 @@ class Settings(BaseSettings):
     WEATHER_API: str = "open-meteo"  # or "openweather"
     OPENWEATHER_API_KEY: str | None = None
 
-    # Storage Configuration
-    STORAGE_DIR: str = "./storage"
-    
-    # SQLite Storage
-    SQLITE_PATH: str = "./storage/memory/mvp.db"
-    
-    # Vector Store
-    VECTOR_BACKEND: str = "chroma"  # or "sklearn"
-    CHROMA_PATH: str = "./storage/vectordb"
+    # Storage Configuration (use module-level constants)
+    STORAGE_DIR: str = BASE_STORAGE_DIR
+    SESSION_MEM_PATH: str = SESSION_MEM_PATH
+    LONGTERM_BACKEND: str = LONGTERM_BACKEND
+    LONGTERM_PATH: str = LONGTERM_PATH
+    KNOWLEDGE_BACKEND: str = KNOWLEDGE_BACKEND
+    KNOWLEDGE_PATH: str = KNOWLEDGE_PATH
 
     # LLM Configuration
     LLM_PROVIDER: str = "gemini"  # Options: "mock", "deepseek", "gemini", "openai"
+    DEFAULT_MODEL: str = DEFAULT_MODEL
+    DEFAULT_TEMPERATURE: float = DEFAULT_TEMPERATURE
     
     # DeepSeek
     DEEPSEEK_API_KEY: str | None = None
@@ -51,20 +81,3 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 settings = Settings()
-
-# Ensure storage directories exist
-def ensure_storage_dirs():
-    """Create storage directories if they don't exist"""
-    from pathlib import Path
-    
-    # Create main storage directory
-    Path(settings.STORAGE_DIR).mkdir(exist_ok=True)
-    
-    # Create memory subdirectory
-    Path(settings.SQLITE_PATH).parent.mkdir(parents=True, exist_ok=True)
-    
-    # Create vectordb subdirectory
-    Path(settings.CHROMA_PATH).mkdir(parents=True, exist_ok=True)
-
-# Auto-create directories on import
-ensure_storage_dirs()

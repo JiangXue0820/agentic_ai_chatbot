@@ -4,6 +4,32 @@ Provides semantic search and knowledge retrieval using ChromaDB.
 """
 from typing import List, Dict, Any
 from app.memory.vector_store import VectorStore
+from app.utils.config import KNOWLEDGE_PATH
+
+
+# =====================================================
+# 🔹 Knowledge Base Wrapper
+# =====================================================
+class KnowledgeBaseStore:
+    """
+    High-level wrapper for document knowledge storage and retrieval.
+
+    Uses Chroma or local fallback depending on environment.
+    """
+
+    def __init__(self):
+        self.vstore = VectorStore(
+            path=KNOWLEDGE_PATH,
+            collection="knowledge_base"
+        )
+
+    def ingest_docs(self, docs: List[Dict]):
+        """Ingest a batch of documents into the knowledge base."""
+        self.vstore.ingest(docs)
+
+    def search(self, query: str, top_k: int = 3) -> List[Dict]:
+        """Search the knowledge base for relevant information."""
+        return self.vstore.query(query, top_k)
 
 
 class VDBAdapter:
@@ -16,7 +42,7 @@ class VDBAdapter:
     Attributes:
         description: Human-readable description of the tool
         parameters: JSON schema defining the tool's parameters
-        store: VectorStore instance for document storage and retrieval
+        store: KnowledgeBaseStore instance for document storage and retrieval
     """
     
     # Tool metadata for ToolRegistry
@@ -48,11 +74,11 @@ class VDBAdapter:
     
     def __init__(self):
         """
-        Initialize VDB adapter with a VectorStore instance.
+        Initialize VDB adapter with a KnowledgeBaseStore instance.
         
         The store uses ChromaDB collection named "knowledge_base".
         """
-        self.store = VectorStore("knowledge_base")
+        self.store = KnowledgeBaseStore()
     
     def run(self, **kwargs) -> Dict[str, Any]:
         """

@@ -1,11 +1,12 @@
 ﻿import sqlite3
 import time
 from typing import Any
-from app.utils.config import settings
+from app.utils.config import SESSION_MEM_PATH
 
 class SQLiteStore:
     def __init__(self, path: str | None = None):
-        self.path = path or settings.SQLITE_PATH
+        # Default path from config
+        self.path = path or SESSION_MEM_PATH
         
         # Ensure directory exists
         from pathlib import Path

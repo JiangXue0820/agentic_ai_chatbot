@@ -1,0 +1,91 @@
+tasks:
+  - title: "🔍 Verify Agent Refactor Completion & Runtime Health"
+    description: |
+      检查 app/agent 下的所有模块是否完成了六阶段重构要求，并验证 Agent 是否能正常运行。
+
+      === 检查点 ===
+      1️⃣ config.py 中定义了正确的路径常量：
+          - STORAGE_DIR
+          - SESSION_MEM_PATH
+          - LONGTERM_PATH
+          - KNOWLEDGE_PATH
+
+      2️⃣ memory 层完整：
+          - app/agent/memory.py 含有 to_longterm_snapshot() 与 clear()
+          - SQLiteStore 与 VectorStore 导入路径正确
+          - 目录 storage/memory/sessionMem 可写入
+
+      3️⃣ intent 模块已增强：
+          - Intent dataclass 含有 source 属性
+          - Clarification 返回包含 type, message, options, intents, steps 字段
+          - _fallback_recognition() 保留基础匹配逻辑
+
+      4️⃣ core 模块逻辑修复：
+          - _plan_and_execute() clarification 返回包含 steps 与 intents
+          - round_count 每个 intent 重置
+          - timestamp 使用 datetime.now().isoformat()
+          - _normalize_output() 函数存在并用于 handle() 结尾
+          - _fallback_planning() 参数 key 为 city 而非 location
+
+      5️⃣ summarization 改进：
+          - _format_observation() 输出自然语言描述
+          - _summarize_result() 根据语言切换 prompt（含中文/英文逻辑）
+
+      6️⃣ 跨 session 记忆已启用：
+          - handle() 调用 long_mem.search()
+          - handle() 结束时调用 long_mem.store_conversation()
+
+      7️⃣ 运行检查：
+          - python -m app.agent.core 可成功 import
+          - 初始化 Agent() 不报错
+          - 调用 Agent.handle("demo", "今天天气如何？") 可返回结构化结果:
+              { "type": "answer", "answer": "...", "intents": [...], "steps": [...] }
+
+      === 执行方式 ===
+      1. 检查文件存在与关键函数定义
+      2. 尝试 import app.agent.core 并运行最小测试
+      3. 输出检测报告（模块状态 + Agent 运行状态）
+
+    command: |
+      echo "=== 🔍 检查 Agent 模块结构与功能状态 ==="
+
+      echo "➡️ 检查配置路径..."
+      grep -q "SESSION_MEM_PATH" app/utils/config.py && echo "✅ config.py 路径已定义" || echo "❌ config.py 缺少路径定义"
+
+      echo "➡️ 检查 Memory 层..."
+      test -f app/agent/memory.py && grep -q "to_longterm_snapshot" app/agent/memory.py && echo "✅ memory.py 增强存在" || echo "❌ memory.py 未实现 snapshot"
+      test -f app/agent/long_term_memory.py && grep -q "store_conversation" app/agent/long_term_memory.py && echo "✅ long_term_memory 实现存在" || echo "❌ long_term_memory 缺失"
+      test -d storage/memory/sessionMem && echo "✅ SQLite 存储目录存在" || echo "⚠️ storage/memory/sessionMem 未创建"
+
+      echo "➡️ 检查 Intent 模块..."
+      grep -q "source" app/agent/intent.py && echo "✅ Intent.source 存在" || echo "❌ Intent.source 缺失"
+      grep -q "clarification" app/agent/intent.py && echo "✅ Clarification 结构包含" || echo "❌ Clarification 逻辑未更新"
+
+      echo "➡️ 检查 Core 模块关键逻辑..."
+      grep -q "_normalize_output" app/agent/core.py && echo "✅ normalize_output 存在" || echo "❌ normalize_output 未定义"
+      grep -q "round_count = 0" app/agent/core.py && echo "✅ round_count 重置逻辑存在" || echo "⚠️ round_count 未重置"
+      grep -q "datetime.now().isoformat" app/agent/core.py && echo "✅ 时间戳格式修正" || echo "⚠️ 时间戳仍为旧格式"
+      grep -q "city" app/agent/core.py && echo "✅ fallback 参数已更新" || echo "⚠️ fallback 仍使用 location"
+
+      echo "➡️ 检查 Summarization 改进..."
+      grep -q "我找到了" app/agent/core.py && echo "✅ 自然语言 observation" || echo "⚠️ observation 仍为原始结构"
+      grep -q "Chinese" app/agent/core.py && echo "✅ Summarizer 语言检测存在" || echo "⚠️ Summarizer 未检测语言"
+
+      echo "➡️ 检查跨 Session 记忆..."
+      grep -q "long_mem.search" app/agent/core.py && grep -q "long_mem.store_conversation" app/agent/core.py && echo "✅ longterm 记忆集成" || echo "⚠️ longterm 未启用"
+
+      echo "➡️ 检查运行状态..."
+      python3 - <<'EOF'
+import sys, json
+try:
+    from app.agent.core import Agent
+    agent = Agent()
+    result = agent.handle("demo_user", "今天天气怎么样？")
+    assert isinstance(result, dict)
+    print("✅ Agent 正常运行:", json.dumps(result, ensure_ascii=False)[:200])
+except Exception as e:
+    print("❌ Agent 启动或运行失败:", e)
+    sys.exit(1)
+EOF
+
+      echo "=== ✅ 检查完成 ==="
