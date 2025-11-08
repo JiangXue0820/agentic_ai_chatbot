@@ -39,6 +39,7 @@ class IntentRecognizer:
             "search_knowledge": "vdb",
             "general_qa": None,  # No tool needed - direct LLM chat
         }
+        self.min_confidence = 0.5
 
     # =====================================================
     # Public API
@@ -127,8 +128,11 @@ Return valid JSON with this structure:
             
             intent_list = []
             for intent_data in data.get("intents", []):
-                confidence = float(intent_data.get("confidence", 0.5))
-                if confidence < 0.7:
+                try:
+                    confidence = float(intent_data.get("confidence", 0.75))
+                except (TypeError, ValueError):
+                    confidence = 0.75
+                if confidence < self.min_confidence:
                     return {
                         "type": "clarification",
                         "message": f"Intent confidence too low ({confidence:.2f}). Please clarify your goal.",

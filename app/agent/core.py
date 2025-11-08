@@ -93,6 +93,7 @@ class Agent:
 
         # === 3. Intent recognition ===
         intents = self._recognize_intents(text, merged_context)
+        logger.debug(f"Recognized intents: {intents}")
         if isinstance(intents, dict) and intents.get("type") == "clarification":
             pending_context = {
                 "clarification_type": "intent_ambiguous",
@@ -107,6 +108,7 @@ class Agent:
 
         # === 4. Plan and execute ===
         result = self._plan_and_execute(user_id, text, intents, merged_context)
+        logger.debug(f"Plan and execute result: {result.get('type')} | steps={len(result.get('steps', []))}")
         if result.get("type") == "clarification":
             result["steps"] = result.get("steps", [])
             result["intents"] = [asdict(i) for i in intents] if isinstance(intents, list) else []
@@ -213,10 +215,12 @@ class Agent:
         for intent in intents:
             round_count = 0
             done = False
+            logger.debug(f"Starting intent loop: {intent.name} with slots={intent.slots}")
 
             while not done and round_count < self.max_rounds:
                 round_count += 1
                 step = self._plan_next_step(intent, user_query, steps, observations, context)
+                logger.debug(f"Planned step: {step}")
                 if not step:
                     done = True
                     break
@@ -224,7 +228,29 @@ class Agent:
                 if step.action and step.action != "finish":
                     try:
                         observation = self.tools.invoke(step.action, **step.input)
+                        logger.debug(f"Tool '{step.action}' observation: {observation}")
                         step.observation = observation
+                        if isinstance(observation, dict) and observation.get("error"):
+                            error_msg = observation.get("error", "Unknown error")
+                            step.status = "failed"
+                            step.error = error_msg
+                            used_tools.append({
+                                "name": step.action,
+                                "inputs": step.input,
+                                "outputs": observation,
+                                "status": "failed"
+                            })
+                            trace.add_step(step)
+                            steps.append(step)
+                            logger.info(f"Tool {step.action} returned error: {error_msg}")
+                            return {
+                                "type": "clarification",
+                                "message": f"Tool {step.action} returned an error: {error_msg}. Retry?",
+                                "options": ["Retry", "Cancel"],
+                                "steps": [asdict(s) for s in steps],
+                                "intents": [asdict(i) for i in intents],
+                                "trace": trace.to_dict()
+                            }
                         step.status = "succeeded"
                         obs_str = self._format_observation(observation)
                         observations.append(obs_str)
@@ -236,6 +262,8 @@ class Agent:
                         })
                     except Exception as e:
                         step.status = "failed"
+                        step.error = str(e)
+                        logger.error(f"Tool {step.action} invocation raised exception: {e}", exc_info=True)
                         trace.add_step(step)  # ✅ record even failed step
                         return {
                             "type": "clarification",
@@ -247,6 +275,7 @@ class Agent:
                         }
                 elif intent.name == "general_qa":
                     qa_response = self._direct_llm_qa(user_query, context)
+                    logger.debug(f"Direct QA response: {qa_response}")
                     step.observation = {"answer": qa_response}
                     step.status = "succeeded"
                     observations.append(qa_response)
@@ -258,6 +287,7 @@ class Agent:
                     done = True
 
             if round_count >= self.max_rounds:
+                logger.warning("Max reasoning rounds reached before completion.")
                 return {
                     "type": "answer",
                     "answer": "I reached the reasoning limit but couldn't complete the task. Please restate your question.",
@@ -269,6 +299,7 @@ class Agent:
                 }
 
         answer = self._summarize_result(user_query, steps, observations)
+        logger.debug(f"Final summarized answer: {answer}")
         return {
             "type": "answer",
             "answer": answer,
@@ -379,7 +410,22 @@ Recent observations:
             if "results" in observation and isinstance(observation["results"], list):
                 if not observation["results"]:
                     return "No relevant results found."
-                return f"Found {len(observation['results'])} relevant items."
+                formatted = []
+                for idx, item in enumerate(observation["results"][:3], 1):
+                    if isinstance(item, dict):
+                        title = item.get("metadata", {}).get("title") if isinstance(item.get("metadata"), dict) else None
+                        snippet = item.get("chunk") or item.get("text") or json.dumps(item, ensure_ascii=False)
+                    else:
+                        title = None
+                        snippet = str(item)
+                    snippet = (snippet or "").strip().replace("\n", " ")
+                    if len(snippet) > 200:
+                        snippet = snippet[:200].rstrip() + "..."
+                    if title:
+                        formatted.append(f"{idx}. {title}: {snippet}")
+                    else:
+                        formatted.append(f"{idx}. {snippet}")
+                return "Knowledge hits:\n" + "\n".join(formatted)
             if "temperature" in observation:
                 loc = observation.get("location", "")
                 return f"Weather in {loc}: {observation['temperature']}°C, {observation.get('condition', '')}"

@@ -46,3 +46,12 @@ class SQLiteStore:
             {"content": r[0], "type": r[1], "ttl": r[2], "created_at": r[3]}
             for r in rows if alive(r)
         ]
+
+    def delete(self, user_id: str, namespace: str, mtype: str):
+        """Delete stored memories matching the given key."""
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                "DELETE FROM memories WHERE user_id=? AND namespace=? AND type=?",
+                (user_id, namespace, mtype),
+            )
+            conn.commit()

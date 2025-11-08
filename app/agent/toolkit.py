@@ -64,18 +64,29 @@ class ToolRegistry:
         tool = self.tools[tool_name]
         logger.info(f"Invoking tool '{tool_name}' with params: {kwargs}")
 
-        # Find callable method
+        call_kwargs = dict(kwargs)
+        method_override = call_kwargs.pop("method", None)
+        params_payload = call_kwargs.pop("params", None)
+        if isinstance(params_payload, dict):
+            call_kwargs = {**params_payload, **call_kwargs}
+
         method = None
-        for candidate in ["run", "query", "current", "execute", "search", "invoke"]:
+        candidate_methods = []
+        if method_override:
+            candidate_methods.append(method_override)
+        candidate_methods.extend([name for name in ["run", "query", "current", "execute", "search", "invoke"] if name not in candidate_methods])
+
+        for candidate in candidate_methods:
             if hasattr(tool, candidate) and callable(getattr(tool, candidate)):
                 method = getattr(tool, candidate)
+                logger.debug(f"Tool '{tool_name}' using method '{candidate}' with args: {call_kwargs}")
                 break
 
         if not method:
             return {"error": f"No callable interface found for tool '{tool_name}'"}
 
         try:
-            result = method(**kwargs)
+            result = method(**call_kwargs)
             # Ensure consistent structure
             if isinstance(result, dict):
                 return result

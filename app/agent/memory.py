@@ -49,6 +49,9 @@ class SessionMemory:
             value: Value to store (will be converted to string)
             ttl: Time-to-live in seconds (None = no expiration)
         """
+        if value is None:
+            self.store.delete(user_id, session_id, key)
+            return
         self.store.write(user_id, session_id, key, str(value), ttl)
 
     def read(self, user_id: str, session_id: str, key: str):

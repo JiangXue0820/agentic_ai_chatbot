@@ -261,7 +261,3 @@ class WeatherAdapter:
         
         return codes.get(code, f"Code {code}")
     
-    # Keep old method for backward compatibility
-    def current(self, city: Optional[str] = None, lat: Optional[float] = None, lon: Optional[float] = None) -> dict:
-        """Backward compatible current weather method."""
-        return self.run(city=city, lat=lat, lon=lon, date="today")
