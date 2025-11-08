@@ -19,11 +19,15 @@ class Settings(BaseSettings):
     WEATHER_API: str = "open-meteo"  # or "openweather"
     OPENWEATHER_API_KEY: str | None = None
 
-    # Storage
-    SQLITE_PATH: str = "./mvp.db"
-
-    # Vector store
+    # Storage Configuration
+    STORAGE_DIR: str = "./storage"
+    
+    # SQLite Storage
+    SQLITE_PATH: str = "./storage/memory/mvp.db"
+    
+    # Vector Store
     VECTOR_BACKEND: str = "chroma"  # or "sklearn"
+    CHROMA_PATH: str = "./storage/vectordb"
 
     # LLM Configuration
     LLM_PROVIDER: str = "mock"  # Options: "mock", "deepseek", "gemini", "openai"
@@ -44,6 +48,23 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-        extra = "ignore"  
+        extra = "ignore"
 
 settings = Settings()
+
+# Ensure storage directories exist
+def ensure_storage_dirs():
+    """Create storage directories if they don't exist"""
+    from pathlib import Path
+    
+    # Create main storage directory
+    Path(settings.STORAGE_DIR).mkdir(exist_ok=True)
+    
+    # Create memory subdirectory
+    Path(settings.SQLITE_PATH).parent.mkdir(parents=True, exist_ok=True)
+    
+    # Create vectordb subdirectory
+    Path(settings.CHROMA_PATH).mkdir(parents=True, exist_ok=True)
+
+# Auto-create directories on import
+ensure_storage_dirs()

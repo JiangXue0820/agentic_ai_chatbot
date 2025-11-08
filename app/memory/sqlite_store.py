@@ -6,6 +6,11 @@ from app.utils.config import settings
 class SQLiteStore:
     def __init__(self, path: str | None = None):
         self.path = path or settings.SQLITE_PATH
+        
+        # Ensure directory exists
+        from pathlib import Path
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        
         self._init()
 
     def _init(self):

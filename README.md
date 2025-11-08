@@ -181,6 +181,12 @@ agentic_ai_artc/
 │   └── utils/
 │       ├── config.py           # Configuration settings
 │       └── logging.py          # PII-masked logging
+├── storage/                    # 统一存储根目录
+│   ├── memory/                 # SQLite 数据库存储
+│   │   └── mvp.db             # 对话记忆和上下文
+│   └── vectordb/               # ChromaDB 向量数据库
+│       ├── chroma.sqlite3     # ChromaDB 元数据
+│       └── [embedding files]   # 向量数据文件
 ├── ui/
 │   └── app.py                  # Streamlit web interface
 ├── scripts/

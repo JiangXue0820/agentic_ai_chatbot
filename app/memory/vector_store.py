@@ -13,26 +13,24 @@ from math import sqrt
 class VectorStore:
     def __init__(self, 
                  collection: str = "knowledge_base", 
-                 embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
                  use_cosine: bool = True):
         """
         Initialize VectorStore.
         
         Args:
             collection: Collection name (must be 3+ characters)
-            embedding_model: Sentence transformer model name
             use_cosine: Use cosine similarity (True) or L2 distance (False)
         """
         self.collection_name = collection
-        self.embedding_model = embedding_model
 
         if _HAVE_CHROMA:
-            self.client = chromadb.Client()
+            from app.utils.config import settings
             
-            # Create embedder with specified model
-            self.embedder = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name=embedding_model
-            )
+            # Use PersistentClient for data persistence
+            self.client = chromadb.PersistentClient(path=settings.CHROMA_PATH)
+            
+            # Create embedder with specified model. Use "sentence-transformers/all-MiniLM-L6-v2" by default
+            self.embedder = embedding_functions.DefaultEmbeddingFunction()
             
             # Create collection with embedder
             metadata = {"hnsw:space": "cosine" if use_cosine else "l2"}
