@@ -269,5 +269,6 @@ This is an MVP demonstration project. Adapt as needed for your use case.
 
 For issues or questions, please refer to the design document (`design_doc.md`) for detailed architecture and requirements.
 
-#   a g e n t i c _ a i _ c h a t b o t  
+#   a g e n t i c _ a i _ c h a t b o t 
+ 
  
