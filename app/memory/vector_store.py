@@ -11,12 +11,36 @@ except Exception:
 from math import sqrt
 
 class VectorStore:
-    def __init__(self, collection: str = "kb"):
+    def __init__(self, 
+                 collection: str = "knowledge_base", 
+                 embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+                 use_cosine: bool = True):
+        """
+        Initialize VectorStore.
+        
+        Args:
+            collection: Collection name (must be 3+ characters)
+            embedding_model: Sentence transformer model name
+            use_cosine: Use cosine similarity (True) or L2 distance (False)
+        """
         self.collection_name = collection
+        self.embedding_model = embedding_model
+
         if _HAVE_CHROMA:
             self.client = chromadb.Client()
-            self.coll = self.client.get_or_create_collection(collection)
-            self.embedder = embedding_functions.DefaultEmbeddingFunction()
+            
+            # Create embedder with specified model
+            self.embedder = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name=embedding_model
+            )
+            
+            # Create collection with embedder
+            metadata = {"hnsw:space": "cosine" if use_cosine else "l2"}
+            self.coll = self.client.get_or_create_collection(
+                name=collection, 
+                embedding_function=self.embedder,
+                metadata=metadata
+            )
         else:
             self.docs: list[str] = []
             self.meta: list[dict] = []
@@ -24,8 +48,12 @@ class VectorStore:
     def ingest(self, docs: List[Dict]):
         if _HAVE_CHROMA:
             texts = [d["text"] for d in docs]
-            ids = [d.get("id") or str(i) for i, _ in enumerate(texts)]
-            self.coll.add(ids=ids, documents=texts, metadatas=[d.get("metadata", {}) for d in docs])
+            ids = [d.get("id") or str(i) for i, d in enumerate(docs)]
+            self.coll.add(
+                ids=ids, 
+                documents=texts, 
+                metadatas=[d.get("metadata", {}) for d in docs]
+            )
         else:
             for d in docs:
                 self.docs.append(d["text"])
@@ -44,15 +72,16 @@ class VectorStore:
                 })
             return out
         else:
-            # cosine on naive hash-embeddings
+            # Fallback: cosine on naive hash-embeddings
             def emb(s):
                 import random
                 random.seed(hash(s) & 0xffffffff)
                 return [random.random() for _ in range(64)]
             q = emb(query)
-            def cos(a,b):
+            def cos(a, b):
                 num = sum(x*y for x,y in zip(a,b))
-                da = sqrt(sum(x*x for x in a)); db = sqrt(sum(x*x for x in b))
+                da = sqrt(sum(x*x for x in a))
+                db = sqrt(sum(x*x for x in b))
                 return num / (da*db + 1e-9)
             scored = []
             for i, t in enumerate(self.docs):
@@ -60,5 +89,10 @@ class VectorStore:
             scored.sort(key=lambda x: x[1], reverse=True)
             out = []
             for i, s in scored[:top_k]:
-                out.append({"chunk": self.docs[i], "score": float(s), "doc_id": str(i), "metadata": self.meta[i]})
+                out.append({
+                    "chunk": self.docs[i], 
+                    "score": float(s), 
+                    "doc_id": str(i), 
+                    "metadata": self.meta[i]
+                })
             return out

@@ -1,9 +1,4 @@
 # Agentic AI MVP – Project Documentation
-
-> Minimal, end-to-end implementation scaffold for: Agent API + Memory + Gmail + Weather + Vector DB + Web UI (Streamlit).
-
----
-
 ## Project Overview
 
 This is an **Agentic AI system** exposing a REST API with:
@@ -47,8 +42,12 @@ cp .env.example .env
 
 Edit `.env` to customize settings (optional for MVP demo):
 - `API_TOKEN`: Bearer token for API authentication
+- `LLM_PROVIDER`: Choose between "mock" (default), "deepseek", "gemini", or "openai"
+- `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY`: For real LLM integration
 - `WEATHER_API`: Choose between "open-meteo" (default, no key) or "openweather"
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`: For real Gmail integration
+
+See `ENV_SETUP.md` for complete configuration guide.
 
 ---
 
@@ -215,8 +214,26 @@ agentic_ai_artc/
 - **Fallback**: Hash-based pseudo-embeddings (if Chroma unavailable)
 
 ### LLM Provider
-- **Current**: Mock echo implementation
-- **Production**: Replace `app/llm/provider.py` with real LLM (OpenAI, Anthropic, etc.)
+- **Default**: Mock echo implementation (no API key required)
+- **Supported Providers**: 
+  - **DeepSeek**: Cost-effective, excellent Chinese/English support
+  - **Gemini**: Google's LLM with generous free tier
+  - **OpenAI**: GPT-4o-mini, GPT-4, etc.
+- **Configuration**: Set `LLM_PROVIDER` in `.env` to one of: `mock`, `deepseek`, `gemini`, `openai`
+- **Setup**:
+  ```bash
+  # Install LLM dependencies
+  pip install openai>=1.50.0 google-generativeai>=0.3.0
+  
+  # Configure in .env (example for DeepSeek)
+  LLM_PROVIDER=deepseek
+  DEEPSEEK_API_KEY=your-api-key-here
+  ```
+- **API Keys**:
+  - DeepSeek: https://platform.deepseek.com
+  - Gemini: https://ai.google.dev
+  - OpenAI: https://platform.openai.com
+- See `ENV_SETUP.md` for detailed configuration
 
 ---
 
@@ -231,7 +248,7 @@ agentic_ai_artc/
 
 ## Next Steps (Production Roadmap)
 
-1. **LLM Integration**: Replace stub with real LLM provider (OpenAI, Claude, etc.)
+1. **LLM Integration**: ✅ Complete - Supports DeepSeek, Gemini, and OpenAI
 2. **Gmail OAuth**: Implement full OAuth 2.0 flow with token refresh
 3. **Streaming**: Add SSE/WebSocket for real-time response streaming
 4. **Dockerization**: Add Dockerfile and docker-compose.yml
@@ -268,7 +285,3 @@ This is an MVP demonstration project. Adapt as needed for your use case.
 ## Support
 
 For issues or questions, please refer to the design document (`design_doc.md`) for detailed architecture and requirements.
-
-#   a g e n t i c _ a i _ c h a t b o t 
- 
- 

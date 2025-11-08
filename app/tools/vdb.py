@@ -2,7 +2,7 @@
 
 class VDBAdapter:
     def __init__(self):
-        self.store = VectorStore("kb")
+        self.store = VectorStore("knowledge_base")
 
     def ingest_texts(self, items: list[dict]):
         # items: [{"id":..., "text":..., "metadata":{...}}]
