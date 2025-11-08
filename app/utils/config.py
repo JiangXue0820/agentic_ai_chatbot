@@ -2,6 +2,7 @@
 from pathlib import Path
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+from typing import Optional
 
 # Load .env file explicitly
 env_path = Path(__file__).parent.parent.parent / ".env"
@@ -38,7 +39,9 @@ DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
 DEFAULT_TEMPERATURE: float = float(os.getenv("DEFAULT_TEMPERATURE", "0.7"))
 
 class Settings(BaseSettings):
-    API_TOKEN: str = "changeme"
+    ADMIN_USERNAME: str = None
+    ADMIN_PASSWORD: str = None
+    API_TOKEN: Optional[str] = None
     CORS_ALLOW_ORIGINS: list[str] = ["*"]
 
     # Gmail OAuth (configure for real runs)
@@ -79,5 +82,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         extra = "ignore"
+        env_file_encoding = "utf-8"
 
 settings = Settings()

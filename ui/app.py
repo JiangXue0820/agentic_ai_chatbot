@@ -7,22 +7,34 @@ from datetime import datetime
 # Config
 # ===============================
 API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8000")
-API_TOKEN = os.getenv("API_TOKEN", "changeme")
 
 st.set_page_config(page_title="Agentic AI Chat", layout="wide")
 
-headers = {"Authorization": f"Bearer {API_TOKEN}"}
+# ===============================
+# Session State 初始化
+# ===============================
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "api_token" not in st.session_state:
+    st.session_state.api_token = None
+if "sessions" not in st.session_state:
+    st.session_state.sessions = {}
+if "current_session" not in st.session_state:
+    st.session_state.current_session = None
 
 # ===============================
 # Helper Functions
 # ===============================
 def call_agent_api(query: str, session_id: str) -> dict | None:
     """统一封装 Agent API 调用与错误处理"""
+    token = st.session_state.api_token
+    headers = {"Authorization": f"Bearer {token}"}
+
     try:
         r = requests.post(
             f"{API_BASE}/agent/invoke",
             json={"input": query, "session_id": session_id},
-            headers={"Authorization": f"Bearer {API_TOKEN}"},
+            headers=headers,
             timeout=30,
         )
 
@@ -47,16 +59,24 @@ def call_agent_api(query: str, session_id: str) -> dict | None:
     return None
 
 
-# ===============================
-# Session & Sidebar Management
-# ===============================
-st.sidebar.title("💬 聊天记录")
-
-# 初始化存储结构
-if "sessions" not in st.session_state:
-    st.session_state.sessions = {}  # {id: {"title": str, "messages": []}}
-if "current_session" not in st.session_state:
-    st.session_state.current_session = None
+def call_login_api(username: str, password: str) -> str | None:
+    """调用 /auth/login 并返回 access_token"""
+    try:
+        res = requests.post(
+            f"{API_BASE}/auth/login",
+            json={"username": username, "password": password},
+            timeout=15,
+        )
+        if res.status_code == 200:
+            data = res.json()
+            return data.get("access_token")
+        elif res.status_code == 401:
+            st.error("❌ Invalid username or password.")
+        else:
+            st.error(f"⚠️ Login failed: {res.status_code}")
+    except Exception as e:
+        st.error(f"🔌 Login error: {e}")
+    return None
 
 
 def create_session(title: str | None = None):
@@ -75,8 +95,31 @@ def rename_session_if_first_message(sid: str, user_input: str):
         sess["title"] = title
 
 
-# ====== Sidebar Layout ======
-if st.sidebar.button("➕ 新建对话"):
+# ===============================
+# 登录界面
+# ===============================
+if not st.session_state.authenticated:
+    st.title("🔐 Agentic AI Login")
+
+    username = st.text_input("Username", placeholder="admin")
+    password = st.text_input("Password", type="password", placeholder="••••••")
+
+    if st.button("Login"):
+        token = call_login_api(username, password)
+        if token:
+            st.session_state.api_token = token
+            st.session_state.authenticated = True
+            st.sidebar.success("✅ Login successful!")
+            st.rerun()
+
+    st.stop()  # 不渲染主界面，直接停在登录页
+
+# ===============================
+# Sidebar - Session List
+# ===============================
+st.sidebar.title("💬 Sessions")
+
+if st.sidebar.button("➕ New Chat"):
     create_session()
     st.rerun()
 
@@ -88,10 +131,10 @@ for sid, sess in sorted(st.session_state.sessions.items(), reverse=True):
         st.rerun()
 
 st.sidebar.divider()
-st.sidebar.caption("⚙️ 设置")
+st.sidebar.caption("⚙️ Settings")
 st.sidebar.text_input("API Base", API_BASE, key="api_base")
-st.sidebar.text_input("Bearer Token", API_TOKEN, key="api_token")
 
+# Health Check
 if st.sidebar.button("Health Check"):
     try:
         r = requests.get(f"{st.session_state.api_base}/health")
@@ -99,13 +142,19 @@ if st.sidebar.button("Health Check"):
     except Exception as e:
         st.sidebar.error(str(e))
 
+# Logout
+if st.sidebar.button("🚪 Logout"):
+    st.session_state.authenticated = False
+    st.session_state.api_token = None
+    st.rerun()
+
 # ===============================
 # Main Chat Window
 # ===============================
 st.title("🧠 Agentic AI Chat")
 
 if not st.session_state.current_session:
-    st.info("Please select a session or click the ➕ button to create a new one")
+    st.info("Please select a session or click ➕ to start.")
     st.stop()
 
 sid = st.session_state.current_session
@@ -113,40 +162,34 @@ session = st.session_state.sessions[sid]
 messages = session["messages"]
 
 chat_box = st.container()
-
 with chat_box:
     if not messages:
-        st.info("💡 Let's start the conversation！")
+        st.info("💡 Let's start chatting!")
     else:
         for msg in messages:
             role = msg["role"]
             content = msg["content"]
-            if role == "user":
-                st.markdown(
-                    f"""
-                    <div style='text-align:right;background-color:#DCF8C6;padding:10px;
-                    border-radius:10px;margin:5px 0;max-width:80%;float:right;clear:both'>
-                    👤 <b>You:</b> {content}
-                    </div><div style='clear:both'></div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f"""
-                    <div style='text-align:left;background-color:#F0F0F0;padding:10px;
-                    border-radius:10px;margin:5px 0;max-width:80%;float:left;clear:both'>
-                    🤖 <b>Agent:</b> {content}
-                    </div><div style='clear:both'></div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+            color = "#DCF8C6" if role == "user" else "#F0F0F0"
+            align = "right" if role == "user" else "left"
+            icon = "👤" if role == "user" else "🤖"
+            name = "You" if role == "user" else "Agent"
+
+            st.markdown(
+                f"""
+                <div style='text-align:{align};background-color:{color};
+                padding:10px;border-radius:10px;margin:5px 0;max-width:80%;
+                float:{align};clear:both'>
+                {icon} <b>{name}:</b> {content}
+                </div><div style='clear:both'></div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 # ===============================
 # Input Area
 # ===============================
 st.divider()
-user_input = st.text_input("💬 Type your question here:", placeholder="Type your question here...")
+user_input = st.text_input("💬 Ask something:", placeholder="Type your question here...")
 
 col_send, col_clear = st.columns([3, 1])
 with col_send:

@@ -14,6 +14,7 @@ from app.llm.provider import LLMProvider
 from app.tools.weather import WeatherAdapter
 from app.tools.gmail import GmailAdapter
 from app.tools.vdb import VDBAdapter
+from app.tools.memory import ConversationMemoryAdapter
 from app.memory.sqlite_store import SQLiteStore
 from app.agent.intent import Intent, IntentRecognizer
 from app.agent.toolkit import ToolRegistry
@@ -41,18 +42,19 @@ class Agent:
         self.llm = LLMProvider()
         self.intent_recognizer = IntentRecognizer(self.llm)
 
-        # === Tool Registry ===
-        self.tools = ToolRegistry({
-            "weather": WeatherAdapter(),
-            "gmail": GmailAdapter(),
-            "vdb": VDBAdapter(),
-        })
-
         # === Memory Systems ===
         self.mem = SQLiteStore()
         self.short_mem = ShortTermMemory(limit=short_mem_limit)
         self.session_mem = SessionMemory(self.mem)
         self.longterm_mem = LongTermMemoryStore()
+
+        # === Tool Registry ===
+        self.tools = ToolRegistry({
+            "weather": WeatherAdapter(),
+            "gmail": GmailAdapter(),
+            "vdb": VDBAdapter(),
+            "memory":ConversationMemoryAdapter(self.longterm_mem)
+        })
 
         # === Safety Control ===
         self.max_rounds = max_rounds
@@ -107,7 +109,7 @@ class Agent:
             return intents
 
         # === 4. Plan and execute ===
-        result = self._plan_and_execute(user_id, text, intents, merged_context)
+        result = self._plan_and_execute(user_id, text, intents, merged_context, session_id)
         logger.debug(f"Plan and execute result: {result.get('type')} | steps={len(result.get('steps', []))}")
         if result.get("type") == "clarification":
             result["steps"] = result.get("steps", [])
@@ -162,7 +164,7 @@ class Agent:
                 context.append({"role": "user", "content": user_reply})
                 intents = self._recognize_intents(user_reply, context)
                 self.session_mem.write(user_id, session_id, "pending_context", None)
-                return self._plan_and_execute(user_id, user_reply, intents, context)
+                return self._plan_and_execute(user_id, user_reply, intents, context, session_id)
 
             elif clarification_type == "tool_failed":
                 if "retry" in user_reply.lower():
@@ -206,7 +208,7 @@ class Agent:
             }
 
     def _plan_and_execute(
-        self, user_id: str, user_query: str, intents: List[Intent], context: List[Dict[str, str]]
+        self, user_id: str, user_query: str, intents: List[Intent], context: List[Dict[str, str]], session_id: str
     ) -> Dict:
         """Main ReAct-style reasoning and tool execution loop."""
         steps, used_tools, citations, observations = [], [], [], []
@@ -226,6 +228,9 @@ class Agent:
                     break
 
                 if step.action and step.action != "finish":
+                    if step.action == "memory":
+                        step.input.setdefault("user_id", user_id)
+                        step.input.setdefault("session_id", session_id)
                     try:
                         observation = self.tools.invoke(step.action, **step.input)
                         logger.debug(f"Tool '{step.action}' observation: {observation}")
@@ -387,6 +392,7 @@ Recent observations:
             "summarize_emails": ("gmail", {"count": intent.slots.get("count", 5)}),
             "query_knowledge": ("vdb", {"query": intent.slots.get("query", "")}),
             "general_qa": (None, {"query": intent.slots.get("query", "")}),
+            "recall_conversation": ("memory", {"query": intent.slots.get("query", "")}),
         }
         action, inputs = mapping.get(intent.name, (None, {"query": ""}))
         inputs = {k: v for k, v in inputs.items() if v}
@@ -407,6 +413,20 @@ Recent observations:
     def _format_observation(self, observation: Any) -> str:
         """Format tool output for readability."""
         if isinstance(observation, dict):
+            if observation.get("scope") == "longterm" and isinstance(observation.get("results"), list):
+                if not observation["results"]:
+                    return "No prior conversation found."
+                formatted = []
+                for idx, item in enumerate(observation["results"][:3], 1):
+                    if isinstance(item, dict):
+                        snippet = item.get("chunk") or item.get("text") or json.dumps(item, ensure_ascii=False)
+                    else:
+                        snippet = str(item)
+                    snippet = (snippet or "").strip().replace("\n", " ")
+                    if len(snippet) > 200:
+                        snippet = snippet[:200].rstrip() + "..."
+                    formatted.append(f"{idx}. {snippet}")
+                return "Conversation recall:\n" + "\n".join(formatted)
             if "results" in observation and isinstance(observation["results"], list):
                 if not observation["results"]:
                     return "No relevant results found."

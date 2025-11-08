@@ -38,6 +38,7 @@ class IntentRecognizer:
             "query_knowledge": "vdb",
             "search_knowledge": "vdb",
             "general_qa": None,  # No tool needed - direct LLM chat
+            "recall_conversation": "memory",
         }
         self.min_confidence = 0.5
 
@@ -69,6 +70,7 @@ Available intents:
 - summarize_emails: Summarize emails (slots: count, filter)
 - query_knowledge: Search knowledge base (slots: query, topic)
 - general_qa: General questions, chitchat, or any query that doesn't require tools (slots: query)
+- recall_conversation: Recall previous conversation context (slots: query)
 
 If ambiguous or uncertain, set 'ambiguous': true.
 Return valid JSON with this structure:
@@ -116,15 +118,7 @@ Return valid JSON with this structure:
             
             data = json.loads(json_str)
             
-            # Clarification handling
-            if data.get("ambiguous") or data.get("clarification_needed"):
-                return {
-                    "type": "clarification",
-                    "message": "Your request seems ambiguous. Please clarify:",
-                    "options": ["Check weather", "Summarize emails", "Search knowledge base"],
-                    "intents": [],
-                    "steps": []
-                }
+            ambiguous = bool(data.get("ambiguous") or data.get("clarification_needed"))
             
             intent_list = []
             for intent_data in data.get("intents", []):
@@ -149,6 +143,18 @@ Return valid JSON with this structure:
                 )
                 intent_list.append(intent)
             
+            if ambiguous and intent_list and all(i.confidence >= self.min_confidence for i in intent_list):
+                ambiguous = False
+
+            if ambiguous:
+                return {
+                    "type": "clarification",
+                    "message": "Your request seems ambiguous. Please clarify:",
+                    "options": ["Check weather", "Summarize emails", "Search knowledge base"],
+                    "intents": [],
+                    "steps": []
+                }
+
             if not intent_list:
                 return self._fallback_recognition(original_text)
             
@@ -196,6 +202,23 @@ Return valid JSON with this structure:
                 priority=0
             )]
         
+        # Conversation recall keywords
+        recall_keywords = [
+            "what did i ask",
+            "previous chat",
+            "之前问过",
+            "之前说",
+            "history",
+            "conversation before",
+        ]
+        if any(kw in text_lower for kw in recall_keywords):
+            return [Intent(
+                name="recall_conversation",
+                slots={"query": text},
+                confidence=0.8,
+                priority=0
+            )]
+
         # General knowledge/QA keywords (don't require document search)
         qa_keywords = ["explain", "what", "how", "why", "tell me", "解释", "什么是", "怎么", "为什么"]
         if any(kw in text_lower for kw in qa_keywords):

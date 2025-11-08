@@ -174,4 +174,4 @@ class VDBAdapter:
             >>> for result in results:
             ...     print(f"Score: {result['score']}, Text: {result['chunk'][:50]}")
         """
-        return self.store.query(query, top_k)
+        return self.store.search(query, top_k)
