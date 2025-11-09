@@ -2,13 +2,14 @@
 
 ## Overview
 
-Agentic AI ARTc delivers a FastAPI service for a reasoning agent with integrated memory, tool calling, and a Streamlit UI. Key capabilities include:
+Agentic AI Chatbot is a multi-turn FastAPI service that combines reasoning, memory, and tooling in a single agent workflow. It offers:
 
-- Multi-layer memory (short-term buffer, session persistence via SQLite, long-term recall via Chroma vector store)
-- Tool adapters for Gmail, Weather, Vector DB, and conversational memory
-- Pluggable LLM support (mock, DeepSeek, Gemini, OpenAI)
-- Streamlit UI for demos and admin workflows
-- Strong auth & logging guardrails (Bearer token, PII masking, CORS control)
+- **Agent-first architecture** with LLM-driven ReAct planning, `PlanTrace` auditing, and clarification fallbacks.
+- **Layered memory stack** that blends short-term RAM, SQLite session state, and Chroma long-term recall with strict user/session scoping.
+- **Unified ToolRegistry** powering Gmail (OAuth), weather, vector-DB search, and conversation-recall adapters through a single invoke interface.
+- **Pluggable LLM providers** (mock, DeepSeek, Gemini, OpenAI) selected via configuration without code changes.
+- **Security guardrails** spanning bearer-token authentication, content sanitization, and logging.
+- **Streamlit UI** wired to `/auth`, `/agent`, `/tools`, and `/admin` endpoints for rapid testing and demo flows
 
 ---
 
@@ -136,26 +137,34 @@ pytest tests/ -v
 ## Project Structure
 
 ```
-agentic_ai_artc/
+agentic_ai_chatbot/
 ├── app/
-│   ├── main.py                # FastAPI entry point
-│   ├── api/                   # REST routers (/agent, /tools, /memory, /admin, /auth)
-│   ├── agent/                 # Agent core, memory wrapper, planning, toolkit
-│   ├── tools/                 # Gmail, Weather, Vector DB adapters, Conversation memory
-│   ├── memory/                # SQLite store, Vector store abstraction
-│   ├── llm/                   # LLMProvider abstraction
-│   ├── guardrails/            # Security guard for PII masking
-│   ├── security/              # Bearer auth dependency
-│   ├── schemas/               # Pydantic models
-│   └── utils/                 # config, logging, file parsing, text splitter
-├── ui/app.py                  # Streamlit dashboard
-├── scripts/ingest.py          # Demo knowledge ingestion
-├── storage/                   # SQLite DB & Chroma persistence
-├── tests/                     # Pytest suites
-├── requirements.txt
-├── design_document.md         # Spec / instructions
-├── design_report.md           # Architecture overview
-└── README.md                  # This file
+│   ├── main.py                 # FastAPI application entry (router setup)
+│   ├── api/                    # REST routes
+│   │   ├── agent.py            # /agent/invoke endpoint
+│   │   ├── tools.py            # /tools/...
+│   │   ├── memory.py           # /memory/...
+│   │   ├── admin.py            # /admin/bootstrap, reset
+│   │   └── auth.py             # /auth/login
+│   ├── agent/                  # Agent internals & ReAct orchestration
+│   │   ├── core.py             # Agent main class
+│   │   ├── memory.py           # Memory store wrappers
+│   │   ├── planning.py         # Step, PlanTrace
+│   │   ├── intent.py           # Intent recognition
+│   │   └── toolkit.py          # ToolRegistry
+│   ├── tools/                  # External tool adapters (Gmail, Weather, VDB, Memory)
+│   ├── memory/                 # SQLite & VectorStore implementations
+│   ├── llm/                    # LLMProvider abstraction
+│   ├── security/               # Token validation helpers
+│   ├── guardrails/             # Inbound/outbound safety filters
+│   ├── schemas/                # Pydantic models
+│   └── utils/                  # Config, logging, file parsing, text splitting
+├── ui/                         # Streamlit frontend
+├── scripts/                    # Data ingestion scripts
+├── storage/                    # SQLite DBs & Chroma persistence
+├── tests/                      # Pytest coverage
+├── README.md
+└── design_report.md
 ```
 
 ---
