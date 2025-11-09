@@ -54,9 +54,9 @@ graph TD
     AgentCore --> SessionMem[SessionMemory (SQLite)]
     AgentCore --> LongMem[LongTermMemoryStore (Chroma/Memory)]
     AgentCore --> IntentLLM[LLMProvider]
-    ToolAdapters --> Weather[WeatherAdapter -> Open-Meteo]
-    ToolAdapters --> Gmail[GmailAdapter -> Gmail REST]
-    ToolAdapters --> VDB[VectorDB Adapter -> Chroma]
+    ToolAdapters --> Weather[WeatherAdapter (Open-Meteo)]
+    ToolAdapters --> Gmail[GmailAdapter (Gmail REST)]
+    ToolAdapters --> VDB[VectorDB Adapter (Chroma)]
     LongMem --> VectorStore
     SessionMem --> SQLite[(SQLite sessionMem/mvp.db)]
     VectorStore -->|persist| Storage[(storage/knowledgebase, storage/memory)]
@@ -113,20 +113,41 @@ graph TD
 
 ## 🌐 External Integrations
 
-| Integration | Adapter | External Service | Notes |
-|-------------|---------|------------------|-------|
-| Weather | `WeatherAdapter` | Open-Meteo REST API（可换 OpenWeather） | 所有 `requests.get` 设置 `timeout=10`，支持城市名或经纬度 |
-| Gmail | `GmailAdapter` + `gmail_oauth.py` | Google Gmail API | 包含 OAuth 授权流程、Token 刷新，默认需要预先授权 |
-| Vector DB | `VDBAdapter` -> `KnowledgeBaseStore` | Chroma Persistent Client | 支持文档导入、查询、列举、删除；无 Chroma 时使用内存向量 |
+| Integration | Adapter | External Service | 常用方法与示例 |
+|-------------|---------|------------------|----------------|
+| Weather | `WeatherAdapter` | Open-Meteo REST API（默认，可切换 OpenWeather） | `run(city="Singapore")` → 当前天气；`run(date="tomorrow")` → 未来预报。示例：<br>`weather.run(city="Singapore", days_offset=0)` |
+| Gmail | `GmailAdapter` + `gmail_oauth.py` | Google Gmail API | `run(count=5, filter="is:unread")` → 调用 `list_recent` 返回邮件摘要。需提前执行 OAuth：`create_authorization_url` → 浏览器授权 → `exchange_code` 保存 token。 |
+| Vector DB | `VDBAdapter` → `KnowledgeBaseStore` | Chroma Persistent Client（无 Chroma 时使用内存 fallback） | `ingest_file(filename, file_bytes)` → 文档切块入库；`run(query="...", top_k=3)` → 语义检索。示例：<br>`vdb.run(query="Explain federated learning", top_k=3)` |
 
 ## 🔐 Security & Privacy
 
-- **Bearer Token**：`require_bearer` 校验请求头，Token 来自 `.env` 中的 `API_TOKEN`。
-- **管理员登录**：`/auth/login` 校验 `ADMIN_USERNAME` / `ADMIN_PASSWORD`，返回 Bearer Token。
-- **SecurityGuard**：对话输入输出进行 PII mask/unmask（如邮箱、Token）。
-- **日志**：`MaskPIIFilter` 避免敏感字段泄露。
-- **CORS**：通过设置 `CORS_ALLOW_ORIGINS` 控制访问源。
-- **长记忆过滤**：`LongTermMemoryStore.search` 强制按用户/会话过滤结果，防止数据串读。
+- **Bearer Token (`require_bearer` in `app/security/auth.py`)**  
+  - 功能：统一校验访问凭证，保障所有核心 API 都在授权范围内执行。  
+  - 常见调用：FastAPI 依赖注入到 `/agent/*`、`/tools/*`、`/memory/*`、`/admin/*` 等路由。  
+  - 错误处理：缺少头部 → `401 Unauthorized`；Token 不匹配 → `403 Forbidden`。
+
+- **Admin Login (`POST /auth/login`)**  
+  - 功能：提供基础用户名/密码认证，便于 UI 或 CLI 获取 Bearer Token。  
+  - 请求体：`{"username": "...", "password": "..."}`（取值来自 `.env` 的 `ADMIN_USERNAME` / `ADMIN_PASSWORD`）。  
+  - 响应：`{"access_token": "<API_TOKEN>", "token_type": "bearer"}`；失败时返回 `401` 并给出提示。
+
+- **SecurityGuard (`app/guardrails/security_guard.py`)**  
+  - 模块职责：在 Agent 入口/出口执行安全过滤，包括 PII 脱敏、违规内容阻断。  
+  - 主要接口：  
+    - `inbound(text)`：返回 `{safe, text}`，不安全输入会触发安全模式响应。  
+    - `outbound(text)`：对 LLM 输出进行再审查，恢复必要字段并重新遮蔽敏感信息。  
+  - 内部维护 `mask_map`，保证 PII 能够在出站阶段择机还原或继续隐藏。
+
+- **Long-term Memory Filter (`LongTermMemoryStore.search`)**  
+  - 功能：检索长期记忆时强制附带 `user_id` / `session_id` 条件，防止跨用户串读。  
+  - Chroma 模式：通过 `where={"user_id":..., "session_id":...}` 在数据库层实现过滤。  
+  - Fallback 模式：在内存列表中手动比对元数据，行为保持一致。
+
+- **Logging (`app/utils/logging.py`, `./logs/agent_YYYYMMDD.log`)**  
+  - 功能：记录 agent 推理链、工具调用、错误堆栈，提升透明度与可追踪性。  
+  - `configure_logging()`：设置控制台/文件双通道输出，并为两者添加 `MaskPIIFilter`，自动去除邮箱、Token 等敏感信息。  
+  - 日志示例：`Agent.handle` 的 info/debug/error 日志，可结合 log 文件重现调用过程。  
+  - 扩展示例：可增加 `trace_id`、`session_id` 字段，便于跨模块排障。
 
 ## 🧩 Module Map
 
