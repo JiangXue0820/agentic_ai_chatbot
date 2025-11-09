@@ -686,10 +686,12 @@ Recent observations:
             if observation.get("scope") == "knowledge" and observation.get("fallback_answer"):
                 return "Knowledge search returned no results. LLM answer: " + observation["fallback_answer"]
             if "results" in observation and isinstance(observation["results"], list):
-                if not observation["results"]:
+                results_list = observation["results"]
+                if not results_list:
                     return "No relevant results found."
                 formatted = []
-                for idx, item in enumerate(observation["results"][:3], 1):
+                max_items = min(len(results_list), 10)
+                for idx, item in enumerate(results_list[:max_items], 1):
                     if isinstance(item, dict):
                         title = item.get("metadata", {}).get("title") if isinstance(item.get("metadata"), dict) else None
                         snippet = item.get("chunk") or item.get("text") or json.dumps(item, ensure_ascii=False)

@@ -280,30 +280,30 @@ for sid, sess in sorted(st.session_state.sessions.items(), reverse=True):
 
 st.sidebar.divider()
 
-# 🧩 User Config
-st.sidebar.subheader("👤 User Config")
+# # 🧩 User Config
+# st.sidebar.subheader("👤 User Config")
 
-with st.sidebar.expander("🔧 LLM Config", expanded=False):
-    llm_provider = st.selectbox("LLM Provider", ["OpenAI", "Anthropic", "Gemini", "Local"], key="llm_provider")
-    show_llm_token = st.checkbox("👁️ Show Token", key="show_llm_token")
-    st.text_input(
-        "LLM Token",
-        type="default" if show_llm_token else "password",
-        value=os.getenv(f"{llm_provider.upper()}_API_KEY", ""),
-        key="llm_token"
-    )
+# with st.sidebar.expander("🔧 LLM Config", expanded=False):
+#     llm_provider = st.selectbox("LLM Provider", ["OpenAI", "Anthropic", "Gemini", "Local"], key="llm_provider")
+#     show_llm_token = st.checkbox("👁️ Show Token", key="show_llm_token")
+#     st.text_input(
+#         "LLM Token",
+#         type="default" if show_llm_token else "password",
+#         value=os.getenv(f"{llm_provider.upper()}_API_KEY", ""),
+#         key="llm_token"
+#     )
 
 
-with st.sidebar.expander("📧 Gmail Config", expanded=False):
-    gmail_user = st.text_input("User Account", key="gmail_user")
-    show_gmail_pass = st.checkbox("👁️ Show Password", key="show_gmail_pass")
-    st.text_input(
-        "Password",
-        type="default" if show_gmail_pass else "password",
-        key="gmail_password"
-    )
+# with st.sidebar.expander("📧 Gmail Config", expanded=False):
+#     gmail_user = st.text_input("User Account", key="gmail_user")
+#     show_gmail_pass = st.checkbox("👁️ Show Password", key="show_gmail_pass")
+#     st.text_input(
+#         "Password",
+#         type="default" if show_gmail_pass else "password",
+#         key="gmail_password"
+#     )
 
-st.sidebar.divider()
+# st.sidebar.divider()
 
 st.sidebar.subheader("📁 User Documents")
 if st.session_state.api_token:
