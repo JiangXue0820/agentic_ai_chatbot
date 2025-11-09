@@ -6,6 +6,10 @@ requests==2.32.3
 python-dotenv==1.0.1
 loguru==0.7.2
 streamlit==1.39.0
+# Document parsing
+PyPDF2==3.0.1
+python-docx==0.8.11
+markdown==3.6
 # Vector store options (one is enough for MVP)
 chromadb==0.5.5
 # google api (enable when wiring real Gmail)

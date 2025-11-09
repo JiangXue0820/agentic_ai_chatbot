@@ -2,9 +2,15 @@
 Vector Database (VDB) Tool Adapter
 Provides semantic search and knowledge retrieval using ChromaDB.
 """
+import logging
 from typing import List, Dict, Any
+
 from app.memory.vector_store import VectorStore
 from app.utils.config import KNOWLEDGE_PATH
+from app.utils.file_parser import extract_text
+from app.utils.text_splitter import chunk_text
+
+logger = logging.getLogger(__name__)
 
 
 # =====================================================
@@ -152,7 +158,53 @@ class VDBAdapter:
             ...     }
             ... ])
         """
-        self.store.ingest(items)
+        self.store.ingest_docs(items)
+
+    def ingest_file(self, filename: str, file_bytes: bytes) -> Dict[str, Any]:
+        """
+        Parse a document, split into chunks, and ingest into the vector store.
+        """
+        pages = extract_text(file_bytes, filename)
+
+        items: List[Dict[str, Any]] = []
+        empty_pages = 0
+
+        for page_data in pages:
+            page_number = page_data.get("page")
+            page_text = (page_data.get("text") or "").strip()
+
+            if not page_text:
+                empty_pages += 1
+                continue
+
+            chunks = chunk_text(page_text)
+            for idx, chunk in enumerate(chunks):
+                if not chunk.strip():
+                    continue
+                items.append(
+                    {
+                        "id": f"{filename}_p{page_number}_c{idx}",
+                        "text": chunk,
+                        "metadata": {
+                            "filename": filename,
+                            "page": page_number,
+                            "chunk_index": idx,
+                        },
+                    }
+                )
+
+        if not items:
+            raise ValueError("No extractable text found in document.")
+
+        self.ingest_texts(items)
+        logger.info(
+            "Ingested %s chunks from %s (empty pages skipped: %s)",
+            len(items),
+            filename,
+            empty_pages,
+        )
+
+        return {"chunks": len(items), "empty_pages": empty_pages, "filename": filename}
     
     def query(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """

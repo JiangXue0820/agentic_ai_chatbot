@@ -4,7 +4,7 @@
 # Integrated with LongTermMemoryStore and ReAct planning
 # =====================================================
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import asdict
 from datetime import datetime
 import logging
@@ -384,6 +384,10 @@ class Agent:
 
         answer = self._summarize_result(user_query, steps, observations)
         logger.debug(f"Final summarized answer: {answer}")
+        citation_entries = self._collect_citations(used_tools)
+        if citation_entries:
+            answer = self._append_citation_block(answer, citation_entries)
+            citations = citation_entries
         return {
             "type": "answer",
             "answer": answer,
@@ -488,6 +492,54 @@ Recent observations:
     # =====================================================
     # === Summarization & Helpers
     # =====================================================
+
+    def _collect_citations(self, used_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Collect citation metadata from tool outputs."""
+        citations: List[Dict[str, Any]] = []
+        for tool in used_tools:
+            if not isinstance(tool, dict):
+                continue
+            name = (tool.get("name") or "").lower()
+            if name != "vdb":
+                continue
+            outputs = tool.get("outputs")
+            if not isinstance(outputs, dict):
+                continue
+            results = outputs.get("results") or []
+            for result in results:
+                if not isinstance(result, dict):
+                    continue
+                metadata = result.get("metadata") or {}
+                if not isinstance(metadata, dict):
+                    continue
+                filename = metadata.get("filename") or metadata.get("source")
+                page = metadata.get("page")
+                if filename:
+                    citations.append({"filename": filename, "page": page})
+        return citations
+
+    def _append_citation_block(self, answer: str, citations: List[Dict[str, Any]]) -> str:
+        """Append formatted citation block to the final answer."""
+        unique: List[Tuple[str, Any]] = []
+        seen = set()
+        for citation in citations:
+            filename = citation.get("filename")
+            page = citation.get("page")
+            key = (filename, page)
+            if not filename or key in seen:
+                continue
+            seen.add(key)
+            unique.append((filename, page))
+
+        if not unique:
+            return answer
+
+        lines = []
+        for idx, (filename, page) in enumerate(unique, 1):
+            page_display = page if page not in (None, "") else "?"
+            lines.append(f"{idx}. {filename}, page {page_display}")
+
+        return answer.rstrip() + "\n\nSource:\n" + "\n".join(lines)
 
     def _format_observation(self, observation: Any) -> str:
         """Format tool output for readability."""
