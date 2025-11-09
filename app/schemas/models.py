@@ -40,6 +40,7 @@ class MemoryWrite(BaseModel):
 
 class GmailSummaryRequest(BaseModel):
     limit: int = 5
+    filter: str | None = None
 
 class WeatherRequest(BaseModel):
     city: str | None = None

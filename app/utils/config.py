@@ -2,7 +2,7 @@
 from pathlib import Path
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 
 # Load .env file explicitly
 env_path = Path(__file__).parent.parent.parent / ".env"
@@ -25,12 +25,22 @@ LONGTERM_PATH: str = os.path.join(BASE_STORAGE_DIR, "memory/longtermMem")
 KNOWLEDGE_BACKEND: str = "chroma"
 KNOWLEDGE_PATH: str = os.path.join(BASE_STORAGE_DIR, "knowledgebase")
 
+# --- Gmail OAuth token store ---
+GMAIL_TOKEN_PATH: str = os.getenv(
+    "GMAIL_TOKEN_PATH",
+    os.path.join(BASE_STORAGE_DIR, "gmail", "token.json"),
+)
+GMAIL_SCOPES: List[str] = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+]
+
 # --- Create dirs automatically if missing ---
 # Create directory for SESSION_MEM_PATH (it's a file path, so get parent dir)
 os.makedirs(os.path.dirname(SESSION_MEM_PATH), exist_ok=True)
 # Create directories for LONGTERM_PATH and KNOWLEDGE_PATH (they are directory paths)
 os.makedirs(LONGTERM_PATH, exist_ok=True)
 os.makedirs(KNOWLEDGE_PATH, exist_ok=True)
+os.makedirs(os.path.dirname(GMAIL_TOKEN_PATH), exist_ok=True)
 
 # =====================================================
 # Other constants
@@ -47,6 +57,8 @@ class Settings(BaseSettings):
     # Gmail OAuth (configure for real runs)
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_CLIENT_SECRET: str | None = None
+    GMAIL_TOKEN_PATH: str = GMAIL_TOKEN_PATH
+    GMAIL_SCOPES: List[str] = GMAIL_SCOPES
 
     # Weather
     WEATHER_API: str = "open-meteo"  # or "openweather"

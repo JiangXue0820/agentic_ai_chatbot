@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends
+﻿from fastapi import APIRouter, Depends, HTTPException
 from app.security.auth import require_bearer
 from app.tools.gmail import GmailAdapter
 from app.tools.weather import WeatherAdapter
@@ -13,8 +13,11 @@ _vdb = VDBAdapter()
 
 @router.post("/gmail/summary")
 async def gmail_summary(req: GmailSummaryRequest, user=Depends(require_bearer)):
-    emails = _gmail.list_recent(limit=req.limit)
-    return {"emails": emails}
+    try:
+        emails = _gmail.list_recent(limit=req.limit, query=req.filter)
+        return {"emails": emails, "count": len(emails)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 @router.post("/weather/current")
 async def weather_current(req: WeatherRequest, user=Depends(require_bearer)):
