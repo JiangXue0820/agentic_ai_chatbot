@@ -1,4 +1,4 @@
-# Agentic AI API with Memory and External Integrations
+# Agentic AI API - Design Report
 
 ## Project Overview
 
