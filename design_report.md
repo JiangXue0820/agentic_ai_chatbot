@@ -103,6 +103,48 @@ graph TD
     API --> Auth["Auth Router"]
 ```
 
+```mermaid
+flowchart TD
+    subgraph AgentSystem["🧠 Agent System Core"]
+        A["AgentCore / Orchestrator"]
+        R["ToolRegistry"]
+        M["MemoryManager"]
+    end
+
+    subgraph Tools["🔧 ToolAdapters"]
+        TA1["GmailAdapter (Gmail REST)"]
+        TA2["WeatherAdapter (Open-Meteo)"]
+        TA3["VectorDBAdapter (ChromaDB)"]
+    end
+
+    subgraph ExternalAPIs["🌐 External APIs"]
+        G["Gmail API"]
+        W["Weather API"]
+        V["Vector DB"]
+    end
+
+    %% relationships
+    A --> M
+    A -->|ToolRegistry.invoke()| R
+    R -->|manages / loads| TA1
+    R -->|manages / loads| TA2
+    R -->|manages / loads| TA3
+
+    %% tool calls
+    TA1 --> G
+    TA2 --> W
+    TA3 --> V
+
+    %% styles
+    classDef agent fill:#dff3ff,stroke:#0077b6,stroke-width:1.5px;
+    classDef tool fill:#fff7d6,stroke:#f2a900,stroke-width:1.5px;
+    classDef api fill:#e8ffe8,stroke:#2e7d32,stroke-width:1.5px;
+
+    class A,R,M agent
+    class TA1,TA2,TA3 tool
+    class G,W,V api
+```
+
 ## 🧠 Core Components Summary
 
 | Module | Purpose | Core Implementation | Key Dependencies |
