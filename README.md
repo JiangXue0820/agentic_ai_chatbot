@@ -192,18 +192,9 @@ agentic_ai_chatbot/
 | Port 8000 busy | Use `uvicorn app.main:app --port 8001` |
 | Gmail OAuth errors | Confirm Google credentials in `.env` and token storage path |
 
----
-
-## Roadmap
-
-1. **LLM streaming** (SSE/WebSocket)
-2. **Full Gmail Inbox experience** with message body summarization
-3. **Docker/Compose** for reproducible deployment
-4. **Advanced RBAC** & multi-tenant isolation
-5. **Audit logging / analytics dashboards**
 
 ---
 
 ## Support
 
-For architecture deep dive, see `design_report.md`. To contribute or extend, open issues or feature requests in your tracking system of choice. This MVP is intended as a teaching/demo project—adapt freely for production needs.
+For architecture deep dive, see `design_report.md`. 

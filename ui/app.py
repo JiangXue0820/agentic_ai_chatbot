@@ -84,6 +84,8 @@ if "agent_pending" not in st.session_state:
     st.session_state.agent_pending = False
 if "input_to_clear" not in st.session_state:
     st.session_state.input_to_clear = None
+if "api_base" not in st.session_state:
+    st.session_state.api_base = API_BASE
 
 # ===============================
 # Helper Functions
@@ -329,7 +331,7 @@ else:
 
 st.sidebar.divider()
 st.sidebar.caption("⚙️ Settings")
-st.sidebar.text_input("API Base", API_BASE, key="api_base")
+st.sidebar.text_input("API Base", key="api_base")
 
 if st.sidebar.button("Health Check"):
     try:

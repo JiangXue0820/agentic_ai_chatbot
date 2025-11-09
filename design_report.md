@@ -122,17 +122,17 @@ The flow diagram summarizes the agent pipeline end to end: authentication, conte
 ```mermaid
 graph TD
     User[User / UI Client] -->|Bearer token| Invoke[POST /agent/invoke]
-    Invoke --> Auth[require_bearer<br/>(app/security/auth.py)]
+    Invoke --> Auth["require_bearer\n(app/security/auth.py)"]
     Auth --> AgentHandle[Agent.handle]
     AgentHandle -->|secure-mode on?| SecureIn[_secure_inbound masks input]
     AgentHandle --> Context[ShortTermMemory + SessionMemory + LongTermMemory]
-    Context --> Intent[IntentRecognizer<br/>(LLMProvider.chat)]
-    Intent --> Plan[_plan_and_execute<br/>(ToolRegistry.describe)]
-    Plan --> Exec[ToolRegistry.invoke<br/>(Weather/Gmail/VDB/Memory)]
+    Context --> Intent["IntentRecognizer\n(LLMProvider.chat)"]
+    Intent --> Plan["_plan_and_execute\n(ToolRegistry.describe)"]
+    Plan --> Exec["ToolRegistry.invoke\n(Weather/Gmail/VDB/Memory)"]
     Exec --> Summarize[_summarize_result]
     Summarize -->|secure-mode on?| SecureOut[_secure_outbound restores PII]
     Summarize --> MemoryUpdate[Update short/session/long-term memory]
-    MemoryUpdate --> Response[Structured JSON<br/>{answer, steps, used_tools, trace}]
+    MemoryUpdate --> Response["Structured JSON\n{answer, steps, used_tools, trace}"]
 ```
 
 
@@ -566,7 +566,14 @@ These measures collectively secure the API surface, prevent sensitive-data leaka
 
 ## 📊 System-level Call Graphs
 
-### Test Case 1 — Gmail API (Summarize emails)
+### Test Case 1 — Login and Main Page
+
+![User Login Page](img/login.png)
+
+![Main Page](img/main_page.png)
+
+
+### Test Case 2 — Gmail API (Summarize emails)
 
 ```mermaid
 sequenceDiagram
@@ -596,9 +603,10 @@ sequenceDiagram
 ```
 
 ![Gmail Summary Example](img/gmail_summary.png)
+
 ![Gmail Summary Log](img/gmail_summary_log.png)
 
-### Test Case 2 — Weather API (Singapore weather)
+### Test Case 3 — Weather API (Singapore weather)
 
 ```mermaid
 sequenceDiagram
@@ -623,8 +631,10 @@ sequenceDiagram
 
 ![Weather API Example](img/weather_api.png)
 
+![Weather API Log](img/weather_api_log.png)
 
-### Test Case 3 — Souce-Aware Vector DB Retrieval
+
+### Test Case 4 — Souce-Aware Vector DB Retrieval
 
 ```mermaid
 sequenceDiagram
@@ -650,5 +660,37 @@ sequenceDiagram
     API-->>User: HTTP 200 response with knowledge snippet
 ```
 ![Souce-Aware Vector DB Retrieval Example](img/knowledgebase_retrieval.png)
+
+![Souce-Aware Vector DB Retrieval Log](img/knowledgebase_retrieval_log.png)
+
+### Test Case 5 — Privacy & Security Guardrails
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API as POST /agent/invoke
+    participant Agent as Agent.handle
+    participant Guard as SecurityGuard
+    participant Context as Short/Session/Long Memories
+    participant LLM as LLMProvider
+
+    User->>API: {"input": "Note my phone 15678901234 and birthday 8/20", "secure_mode": true}
+    API->>Agent: handle(user_id, text, secure_mode=true)
+    Agent->>Guard: _secure_inbound(text)
+    Guard-->>Agent: {"safe": true, "text": "Note my phone [MOBILE_1] and birthday 8/20"}
+    Agent->>Context: store masked content
+    Note over Agent,Context: Later retrieval returns masked value
+    User->>API: {"input": "what is my phone number and birthday", "secure_mode": true}
+    API->>Agent: handle(..., secure_mode=true)
+    Agent->>Context: load short/session/long memories (masked)
+    Agent->>LLM: _summarize_result("phone [MOBILE_1] ...")
+    LLM-->>Agent: "Your phone is [MOBILE_1] and birthday is August 20th."
+    Agent->>Guard: _secure_outbound(answer)
+    Guard-->>Agent: "Your phone is 156****34 and birthday is August 20th."
+    Agent-->>API: {"answer": "Your phone is 156****34 ...", "secure_mode": true}
+    API-->>User: Sanitized response + secure badge
+```
+
+![Guardrail Flow Example](img/guardrail.png)
 
 

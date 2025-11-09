@@ -158,10 +158,10 @@ class LongTermMemoryStore:
             A list of relevant memory chunks.
         """
         where: Dict[str, Any] | None = None
-        if user_id:
+        if user_id and session_id:
+            where = {"$and": [{"user_id": user_id}, {"session_id": session_id}]}
+        elif user_id:
             where = {"user_id": user_id}
-            if session_id:
-                where["session_id"] = session_id
         elif session_id:
             where = {"session_id": session_id}
         return self.vstore.query(query, top_k, where=where)
