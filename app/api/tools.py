@@ -4,7 +4,13 @@ from app.security.auth import require_bearer
 from app.tools.gmail import GmailAdapter
 from app.tools.weather import WeatherAdapter
 from app.tools.vdb import VDBAdapter
-from app.schemas.models import GmailSummaryRequest, WeatherRequest, VDBQueryRequest
+from app.schemas.models import (
+    GmailSummaryRequest,
+    WeatherRequest,
+    VDBQueryRequest,
+    VDBDocumentsResponse,
+    VDBIngestResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +36,7 @@ async def weather_current(req: WeatherRequest, user=Depends(require_bearer)):
 async def vdb_query(req: VDBQueryRequest, user=Depends(require_bearer)):
     return {"results": _vdb.query(req.query, req.top_k)}
 
-@router.post("/vdb/ingest")
+@router.post("/vdb/ingest", response_model=VDBIngestResponse)
 async def vdb_ingest(
     file: UploadFile = File(...),
     user=Depends(require_bearer),
@@ -45,3 +51,17 @@ async def vdb_ingest(
     except Exception as exc:  # pragma: no cover
         logger.exception("Unexpected ingestion failure for %s", file.filename)
         raise HTTPException(status_code=500, detail="Failed to ingest document") from exc
+
+
+@router.get("/vdb/documents", response_model=VDBDocumentsResponse)
+async def vdb_list_documents(user=Depends(require_bearer)):
+    documents = _vdb.list_documents()
+    return {"documents": documents}
+
+
+@router.delete("/vdb/document/{doc_id}")
+async def vdb_delete_document(doc_id: str, user=Depends(require_bearer)):
+    deleted = _vdb.delete_document(doc_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"ok": True, "doc_id": doc_id}

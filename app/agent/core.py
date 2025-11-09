@@ -160,6 +160,44 @@ class Agent:
             logger.info("Saved pending context for intent clarification")
             return intents
 
+        if isinstance(intents, list) and intents and all(i.name == "note_down" for i in intents):
+            info_text = intents[0].slots.get("text") or text
+            acknowledgment = "OK, I have noted the information down."
+
+            self.short_mem.add("user", info_text)
+            self.short_mem.add("assistant", acknowledgment)
+            updated_context = self.short_mem.get_context()
+
+            prev_saved = session_data.get("longterm_saved", 0)
+
+            note_session_data = {
+                "last_intents": [asdict(i) for i in intents],
+                "last_steps": [],
+                "conversation_history": updated_context,
+                "clarification_pending": None,
+                "longterm_saved": len(updated_context),
+            }
+            self.session_mem.write(user_id, session_id, "context", json.dumps(note_session_data), None)
+
+            if prev_saved < len(updated_context):
+                new_messages = updated_context[prev_saved:]
+                self.longterm_mem.store_conversation(
+                    user_id,
+                    session_id,
+                    new_messages,
+                    start_index=prev_saved,
+                )
+
+            return {
+                "type": "answer",
+                "answer": acknowledgment,
+                "intents": [asdict(i) for i in intents],
+                "steps": [],
+                "used_tools": [],
+                "citations": [],
+                "trace": PlanTrace(user_query=text).to_dict(),
+            }
+
         # === 4. Plan and execute ===
         result = self._plan_and_execute(user_id, text, intents, merged_context, session_id)
         logger.debug(f"Plan and execute result: {result.get('type')} | steps={len(result.get('steps', []))}")
@@ -357,17 +395,69 @@ class Agent:
                             "intents": [asdict(i) for i in intents],
                             "trace": trace.to_dict()  # ✅ new field
                         }
-                elif intent.name == "general_qa":
-                    qa_response = self._direct_llm_qa(user_query, context)
-                    logger.debug(f"Direct QA response: {qa_response}")
-                    step.observation = {"answer": qa_response}
+                elif intent.name in ("general_qa", "potential_knowledge_qa"):
+                    query = intent.slots.get("query") or user_query
+                    rag_answer = None
+                    retrieval_used = False
+                    retrieval_payload: Optional[Dict[str, Any]] = None
+
+                    if intent.name == "potential_knowledge_qa":
+                        try:
+                            retrieval_payload = self.tools.invoke("vdb", query=query, top_k=3)
+                            retrieval_used = True
+                            used_tools.append({
+                                "name": "vdb",
+                                "inputs": {"query": query, "top_k": 3},
+                                "outputs": retrieval_payload,
+                                "status": "succeeded"
+                            })
+                            results = retrieval_payload.get("results", []) if isinstance(retrieval_payload, dict) else []
+                            best_score = max((float(result.get("score", 0.0)) for result in results), default=0.0)
+                            if results and best_score > 0.65:
+                                observations.append(self._format_observation(retrieval_payload))
+                                augmented_context = list(context)
+                                snippets = "\n".join(
+                                    f"- {item.get('chunk', '').strip()}" for item in results[:3]
+                                ).strip()
+                                if snippets:
+                                    augmented_context.append({
+                                        "role": "system",
+                                        "content": f"Relevant knowledge:\n{snippets}"
+                                    })
+                                rag_answer = self._direct_llm_qa(query, augmented_context)
+                        except Exception as e:
+                            logger.error(f"Vector DB retrieval failed: {e}", exc_info=True)
+                            used_tools.append({
+                                "name": "vdb",
+                                "inputs": {"query": query, "top_k": 3},
+                                "outputs": {"error": str(e)},
+                                "status": "failed"
+                            })
+
+                    answer = rag_answer or self._direct_llm_qa(query, context)
+                    logger.debug(f"QA response ({intent.name}): {answer}")
+
+                    observation_payload: Dict[str, Any] = {"answer": answer}
+                    if retrieval_used and retrieval_payload:
+                        observation_payload["retrieval"] = retrieval_payload
+
+                    step.observation = observation_payload
                     step.status = "succeeded"
-                    observations.append(qa_response)
+                    if retrieval_used and retrieval_payload:
+                        # ensure answer is last observation for summarization
+                        observations.append(answer)
+                    else:
+                        observations.append(answer)
 
                 trace.add_step(step)   # ✅ replaces steps.append(step)
                 steps.append(step)     # keep legacy list for backward compatibility
 
-                if step.status == "finished" or step.action == "finish" or not step.decide_next:
+                should_continue = step.decide_next if step.action != "finish" else False
+                if (
+                    step.status in ("finished", "failed")
+                    or step.action == "finish"
+                    or not should_continue
+                ):
                     done = True
 
             if round_count >= self.max_rounds:
@@ -462,7 +552,7 @@ Recent observations:
                 input=data.get("input", {}),
                 observation=None,
                 status="planned",
-                decide_next=bool(data.get("decide_next", False)),
+                decide_next=bool(data.get("decide_next", True)),
             )
         except Exception as e:
             logger.warning(f"Failed to parse planning response: {e}")

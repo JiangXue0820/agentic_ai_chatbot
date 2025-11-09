@@ -18,7 +18,7 @@ class Step:
     input: Dict[str, Any] = field(default_factory=dict)
     observation: Optional[Any] = None
     status: str = "planned"  # planned | running | succeeded | failed | finished
-    decide_next: bool = False
+    decide_next: bool = True
     error: Optional[str] = None
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 

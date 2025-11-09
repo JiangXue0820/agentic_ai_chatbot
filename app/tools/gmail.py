@@ -18,9 +18,9 @@ from app.utils.config import settings
 
 class GmailAdapter:
     """Gmail email retrieval tool backed by the Gmail REST API."""
-
+    
     description = "Access Gmail inbox to read and summarize recent emails"
-
+    
     parameters = {
         "type": "object",
         "properties": {
@@ -44,7 +44,7 @@ class GmailAdapter:
         },
         "required": [],
     }
-
+    
     def run(self, **kwargs) -> Dict[str, Any]:
         count = kwargs.get("count") or kwargs.get("limit", 5)
         query = kwargs.get("filter")
@@ -58,7 +58,7 @@ class GmailAdapter:
             "emails": emails,
             "query": query,
         }
-
+    
     def list_recent(self, limit: int = 5, query: Optional[str] = None) -> List[Dict[str, Any]]:
         """Return summaries for the most recent Gmail messages."""
         if limit > 50:

@@ -140,6 +140,10 @@ class LongTermMemoryStore:
         if docs:
             self.vstore.ingest(docs)
 
+    def clear_all(self) -> None:
+        """Delete all stored long-term conversation data."""
+        self.vstore.delete_all()
+
     def search(self, query: str, top_k: int = 3) -> List[Dict]:
         """
         Query the long-term memory for semantically related content.

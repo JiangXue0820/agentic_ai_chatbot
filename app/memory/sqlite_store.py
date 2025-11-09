@@ -1,6 +1,6 @@
 ﻿import sqlite3
 import time
-from typing import Any
+from typing import Any, List, Dict
 from app.utils.config import SESSION_MEM_PATH
 
 class SQLiteStore:
@@ -55,3 +55,36 @@ class SQLiteStore:
                 (user_id, namespace, mtype),
             )
             conn.commit()
+
+    def clear_all(self):
+        """Remove every record from all tables."""
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("DELETE FROM memories")
+            conn.commit()
+
+    def list_session_contexts(self, user_id: str) -> List[Dict[str, Any]]:
+        """Return the latest stored context per session for a user."""
+        now = int(time.time())
+        with sqlite3.connect(self.path) as conn:
+            rows = conn.execute(
+                """
+                SELECT namespace, content, ttl, created_at
+                FROM memories
+                WHERE user_id=? AND type='context'
+                ORDER BY created_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+
+        sessions: Dict[str, Dict[str, Any]] = {}
+        for namespace, content, ttl, created_at in rows:
+            if namespace in sessions:
+                continue
+            if ttl and ttl > 0 and (created_at + ttl) <= now:
+                continue
+            sessions[namespace] = {
+                "session_id": namespace,
+                "content": content,
+                "created_at": created_at,
+            }
+        return list(sessions.values())

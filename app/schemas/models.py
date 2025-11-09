@@ -53,3 +53,22 @@ class VDBQueryRequest(BaseModel):
 
 class VDBIngestRequest(BaseModel):
     items: list[dict]
+
+
+class VDBDocument(BaseModel):
+    doc_id: str
+    filename: str
+    uploaded_at: str
+
+
+class VDBDocumentsResponse(BaseModel):
+    documents: List[VDBDocument] = Field(default_factory=list)
+
+
+class VDBIngestResponse(BaseModel):
+    ok: bool = True
+    doc_id: str
+    filename: str
+    uploaded_at: str
+    chunks: int
+    empty_pages: Optional[int] = None

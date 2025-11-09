@@ -71,6 +71,7 @@ Available intents:
 - query_knowledge: Search knowledge base (slots: query, topic)
 - general_qa: General questions, chitchat, or any query that doesn't require tools (slots: query)
 - recall_conversation: Recall previous conversation context (slots: query)
+- note_down: Remember information the user wants stored (slots: text)
 
 If ambiguous or uncertain, set 'ambiguous': true.
 Return valid JSON with this structure:
@@ -219,26 +220,33 @@ Return valid JSON with this structure:
                 priority=0
             )]
 
-        # General knowledge/QA keywords (don't require document search)
-        qa_keywords = ["explain", "what", "how", "why", "tell me", "解释", "什么是", "怎么", "为什么"]
-        if any(kw in text_lower for kw in qa_keywords):
+        note_keywords = [
+            "note down",
+            "remember that",
+            "记一下",
+            "帮我记",
+            "记住",
+        ]
+        if any(kw in text_lower for kw in note_keywords):
             return [Intent(
-                name="general_qa",
+                name="note_down",
+                slots={"text": text},
+                confidence=0.9,
+                priority=0,
+            )]
+
+        # General knowledge/QA or potential knowledge-related
+        qa_keywords = ["explain", "what", "how", "why", "tell me", "解释", "什么是", "怎么", "为什么"]
+        search_keywords = ["search", "find", "查找", "搜索", "retrieve", "lookup", "locate", "document", "knowledge base", "资料", "文档", "记录"]
+
+        if any(kw in text_lower for kw in search_keywords + qa_keywords):
+            return [Intent(
+                name="potential_knowledge_qa",
                 slots={"query": text},
                 confidence=0.75,
                 priority=0
             )]
-        
-        # Document search keywords (require VDB)
-        search_keywords = ["search", "find", "查找", "搜索"]
-        if any(kw in text_lower for kw in search_keywords):
-            return [Intent(
-                name="query_knowledge",
-                slots={"query": text},
-                confidence=0.70,
-                priority=0
-            )]
-        
+
         # Default to general_qa for unknown queries
         return [Intent(
             name="general_qa",

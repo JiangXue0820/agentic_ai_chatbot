@@ -3,7 +3,9 @@ Vector Database (VDB) Tool Adapter
 Provides semantic search and knowledge retrieval using ChromaDB.
 """
 import logging
+from datetime import datetime, timezone
 from typing import List, Dict, Any
+from uuid import uuid4
 
 from app.memory.vector_store import VectorStore
 from app.utils.config import KNOWLEDGE_PATH
@@ -36,6 +38,18 @@ class KnowledgeBaseStore:
     def search(self, query: str, top_k: int = 3) -> List[Dict]:
         """Search the knowledge base for relevant information."""
         return self.vstore.query(query, top_k)
+
+    def list_documents(self) -> List[Dict[str, Any]]:
+        """Return all documents stored in the knowledge base."""
+        return self.vstore.list_documents()
+
+    def delete_document(self, doc_id: str) -> bool:
+        """Delete a document (all chunks) by its identifier."""
+        return self.vstore.delete_document(doc_id)
+
+    def clear_all(self) -> None:
+        """Remove every document stored in the knowledge base."""
+        self.vstore.delete_all()
 
 
 class VDBAdapter:
@@ -164,6 +178,8 @@ class VDBAdapter:
         """
         Parse a document, split into chunks, and ingest into the vector store.
         """
+        doc_id = uuid4().hex
+        uploaded_at = datetime.now(timezone.utc).isoformat()
         pages = extract_text(file_bytes, filename)
 
         items: List[Dict[str, Any]] = []
@@ -183,12 +199,14 @@ class VDBAdapter:
                     continue
                 items.append(
                     {
-                        "id": f"{filename}_p{page_number}_c{idx}",
+                        "id": f"{doc_id}_p{page_number}_c{idx}",
                         "text": chunk,
                         "metadata": {
+                            "doc_id": doc_id,
                             "filename": filename,
                             "page": page_number,
                             "chunk_index": idx,
+                            "uploaded_at": uploaded_at,
                         },
                     }
                 )
@@ -198,13 +216,20 @@ class VDBAdapter:
 
         self.ingest_texts(items)
         logger.info(
-            "Ingested %s chunks from %s (empty pages skipped: %s)",
+            "Ingested %s chunks from %s (empty pages skipped: %s, doc_id=%s)",
             len(items),
             filename,
             empty_pages,
+            doc_id,
         )
 
-        return {"chunks": len(items), "empty_pages": empty_pages, "filename": filename}
+        return {
+            "chunks": len(items),
+            "empty_pages": empty_pages,
+            "filename": filename,
+            "doc_id": doc_id,
+            "uploaded_at": uploaded_at,
+        }
     
     def query(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """
@@ -227,3 +252,15 @@ class VDBAdapter:
             ...     print(f"Score: {result['score']}, Text: {result['chunk'][:50]}")
         """
         return self.store.search(query, top_k)
+
+    def list_documents(self) -> List[Dict[str, Any]]:
+        """List all documents stored in the vector database."""
+        return self.store.list_documents()
+
+    def delete_document(self, doc_id: str) -> bool:
+        """Delete a document by its identifier."""
+        return self.store.delete_document(doc_id)
+
+    def delete_all_documents(self) -> None:
+        """Remove every document from the knowledge base."""
+        self.store.vstore.delete_all()
