@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     KNOWLEDGE_PATH: str = KNOWLEDGE_PATH
 
     # LLM Configuration
-    LLM_PROVIDER: str = "gemini"  # Options: "mock", "deepseek", "gemini", "openai"
+    LLM_PROVIDER: str = "deepseek"  # Options: "mock", "deepseek", "gemini", "openai"
     DEFAULT_MODEL: str = DEFAULT_MODEL
     DEFAULT_TEMPERATURE: float = DEFAULT_TEMPERATURE
     

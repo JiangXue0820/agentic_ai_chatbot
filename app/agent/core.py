@@ -20,6 +20,7 @@ from app.agent.intent import Intent, IntentRecognizer
 from app.agent.toolkit import ToolRegistry
 from app.agent.memory import ShortTermMemory, SessionMemory, LongTermMemoryStore
 from app.agent.planning import Step, PlanTrace
+from app.guardrails.security_guard import SecurityGuard
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class Agent:
         # === Core Modules ===
         self.llm = LLMProvider()
         self.intent_recognizer = IntentRecognizer(self.llm)
+        self.guard = SecurityGuard()
 
         # === Memory Systems ===
         self.mem = SQLiteStore()
@@ -127,11 +129,12 @@ class Agent:
         # === 5. Update memories ===
         self.short_mem.add("user", text)
         self.short_mem.add("assistant", result.get("answer", ""))
+        updated_context = self.short_mem.get_context()
 
         session_data = {
             "last_intents": [asdict(i) for i in intents] if isinstance(intents, list) else [],
             "last_steps": result.get("steps", []),
-            "conversation_history": context,
+            "conversation_history": updated_context,
             "clarification_pending": None
         }
         self.session_mem.write(user_id, session_id, "context", json.dumps(session_data), None)
@@ -256,6 +259,26 @@ class Agent:
                                 "intents": [asdict(i) for i in intents],
                                 "trace": trace.to_dict()
                             }
+                        if step.action == "vdb" and isinstance(observation, dict) and not observation.get("results"):
+                            logger.info("Knowledge search returned no results; falling back to direct LLM QA.")
+                            fallback_answer = self._direct_llm_qa(user_query, context)
+                            observations.append("Knowledge search returned no results about the question.")
+                            observations.append(fallback_answer)
+                            step.observation = {
+                                "scope": "knowledge",
+                                "results": observation.get("results", []),
+                                "fallback_answer": fallback_answer,
+                            }
+                            step.status = "succeeded"
+                            used_tools.append({
+                                "name": "llm_fallback",
+                                "inputs": {"query": user_query},
+                                "outputs": {"answer": fallback_answer},
+                                "status": "succeeded"
+                            })
+                            trace.add_step(step)
+                            steps.append(step)
+                            break
                         step.status = "succeeded"
                         obs_str = self._format_observation(observation)
                         observations.append(obs_str)
@@ -427,6 +450,8 @@ Recent observations:
                         snippet = snippet[:200].rstrip() + "..."
                     formatted.append(f"{idx}. {snippet}")
                 return "Conversation recall:\n" + "\n".join(formatted)
+            if observation.get("scope") == "knowledge" and observation.get("fallback_answer"):
+                return "Knowledge search returned no results. LLM answer: " + observation["fallback_answer"]
             if "results" in observation and isinstance(observation["results"], list):
                 if not observation["results"]:
                     return "No relevant results found."
