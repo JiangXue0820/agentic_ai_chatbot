@@ -87,7 +87,7 @@ graph TD
     UI[Streamlit UI] -->|REST| API[FastAPI Routers]
     API -->|/agent/invoke| AgentCore[Agent Orchestrator]
     API -->|/tools/*| ToolAdapters
-    API -->|/memory/*| MemoryAPI
+    API --> Auth["Auth Router"]
     AgentCore --> ShortMem["ShortTermMemory (RAM)"]
     AgentCore --> SessionMem["SessionMemory (SQLite)"]
     AgentCore --> LongMem["LongTermMemoryStore (Chroma/Memory)"]
@@ -101,88 +101,8 @@ graph TD
     VectorStore -->|persist| Storage["storage/knowledgebase, storage/memory"]
     UI -.-> AdminAPI["/admin/bootstrap/reset/"]
     Security["SecurityGuard + Auth"] --> AgentCore
-    API --> Auth["Auth Router"]
 ```
 
-```mermaid
-flowchart TD
-
-    %% === Frontend and API Layer ===
-    UI[Streamlit UI] -->|REST| API[FastAPI Routers]
-    UI -.-> AdminAPI["/admin/bootstrap/reset/"]
-    API -->|/agent/invoke| AgentCore[Agent Orchestrator]
-    API -->|/tools/*| ToolAdapters
-    API -->|/memory/*| MemoryAPI
-    API --> Auth["Auth Router"]
-
-    %% === Security Layer ===
-    Security["SecurityGuard + Auth"] --> AgentCore
-
-    %% === Agent Core and Memory System ===
-    subgraph AgentSystem["🧠 Agent System Core"]
-        A["AgentCore / Orchestrator"]
-        R["ToolRegistry"]
-        M["MemoryManager"]
-    end
-    AgentCore --> A
-    A -->|ToolRegistry.invoke| R
-    A --> M
-
-    A --> ShortMem["ShortTermMemory (RAM)"]
-    A --> SessionMem["SessionMemory (SQLite)"]
-    A --> LongMem["LongTermMemoryStore (Chroma/Memory)"]
-    A --> IntentLLM["LLMProvider"]
-
-    SessionMem --> SQLite[(SQLite sessionMem/mvp.db)]
-    LongMem --> VectorStore
-    VectorStore -->|persist| Storage["storage/knowledgebase, storage/memory"]
-
-    %% === Tool Layer ===
-    subgraph Tools["🔧 ToolAdapters"]
-        TA1["GmailAdapter (Gmail REST)"]
-        TA2["WeatherAdapter (Open-Meteo)"]
-        TA3["VectorDBAdapter (ChromaDB)"]
-    end
-
-    %% ToolRegistry manages adapters
-    R -->|manages / loads| TA1
-    R -->|manages / loads| TA2
-    R -->|manages / loads| TA3
-
-    %% === External APIs ===
-    subgraph ExternalAPIs["🌐 External APIs"]
-        G["Gmail API"]
-        W["Weather API"]
-        V["Vector DB"]
-    end
-
-    %% === Adapter to API calls ===
-    TA1 --> G
-    TA2 --> W
-    TA3 --> V
-
-    %% === API links to adapters ===
-    ToolAdapters --> TA1
-    ToolAdapters --> TA2
-    ToolAdapters --> TA3
-    MemoryAPI --> LongMem
-    MemoryAPI --> SessionMem
-
-    %% === Styling ===
-    classDef ui fill:#ffeef2,stroke:#d6336c,stroke-width:1.5px;
-    classDef api fill:#e5f1ff,stroke:#1e88e5,stroke-width:1.5px;
-    classDef agent fill:#dff3ff,stroke:#0077b6,stroke-width:1.5px;
-    classDef tool fill:#fff7d6,stroke:#f2a900,stroke-width:1.5px;
-    classDef memory fill:#e8ffe8,stroke:#2e7d32,stroke-width:1.5px;
-    classDef external fill:#e8f5e9,stroke:#43a047,stroke-width:1.5px;
-
-    class UI ui
-    class API,Auth api
-    class A,R,M agent
-    class ShortMem,SessionMem,LongMem,IntentLLM,SQLite,VectorStore,Storage memory
-    class TA1,TA2,TA3 tool
-    class G,W,V external
-```
 
 ## 🧠 Core Components Summary
 
