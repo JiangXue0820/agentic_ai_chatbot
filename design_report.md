@@ -595,6 +595,9 @@ sequenceDiagram
     UI-->>User: Show summarized emails
 ```
 
+![Gmail Summary Example](img/gmail_summary.png)
+![Gmail Summary Log](img/gmail_summary_log.png)
+
 ### Test Case 2 — Weather API (Singapore weather)
 
 ```mermaid
@@ -618,7 +621,10 @@ sequenceDiagram
     API-->>User: HTTP 200 response
 ```
 
-### Test Case 3 — Vector DB (Federated learning)
+![Weather API Example](img/weather_api.png)
+
+
+### Test Case 3 — Souce-Aware Vector DB Retrieval
 
 ```mermaid
 sequenceDiagram
@@ -630,7 +636,7 @@ sequenceDiagram
     participant VDB as VDBAdapter.query
     participant LLM as LLMProvider
 
-    User->>API: {"input": "Explain privacy-preserving federated learning"}
+    User->>API: {"input": "Explain the main idea of transformer models"}
     API->>Agent: handle(...)
     Agent->>LongMem: search(query, user_id, session_id)
     LongMem-->>Agent: memory hits[]
@@ -643,3 +649,6 @@ sequenceDiagram
     Agent-->>API: {"answer": "...", "citations": [...]}
     API-->>User: HTTP 200 response with knowledge snippet
 ```
+![Souce-Aware Vector DB Retrieval Example](img/knowledgebase_retrieval.png)
+
+
