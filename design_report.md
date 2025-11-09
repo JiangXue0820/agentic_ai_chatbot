@@ -124,14 +124,20 @@ graph TD
     User[User / UI Client] -->|Bearer token| Invoke[POST /agent/invoke]
     Invoke --> Auth["require_bearer\n(app/security/auth.py)"]
     Auth --> AgentHandle[Agent.handle]
-    AgentHandle -->|secure-mode on?| SecureIn[_secure_inbound masks input]
-    AgentHandle --> Context[ShortTermMemory + SessionMemory + LongTermMemory]
+    AgentHandle --> SecureCheck{secure mode on?}
+    SecureCheck -->|Yes| SecureIn[_secure_inbound masks input]
+    SecureIn --> Context[ShortTermMemory + SessionMemory + LongTermMemory]
+    SecureCheck -->|No| Context
     Context --> Intent["IntentRecognizer\n(LLMProvider.chat)"]
     Intent --> Plan["_plan_and_execute\n(ToolRegistry.describe)"]
     Plan --> Exec["ToolRegistry.invoke\n(Weather/Gmail/VDB/Memory)"]
-    Exec --> Summarize[_summarize_result]
-    Summarize -->|secure-mode on?| SecureOut[_secure_outbound restores PII]
-    Summarize --> MemoryUpdate[Update short/session/long-term memory]
+    Exec --> LoopCheck{Finished?}
+    LoopCheck -->|No| Plan
+    LoopCheck -->|Yes| Summarize[_summarize_result]
+    Summarize --> SecureOutCheck{secure mode on?}
+    SecureOutCheck -->|Yes| SecureOut[_secure_outbound restores PII]
+    SecureOutCheck -->|No| MemoryUpdate[Update short/session/long-term memory]
+    SecureOut --> MemoryUpdate
     MemoryUpdate --> Response["Structured JSON\n{answer, steps, used_tools, trace}"]
 ```
 
