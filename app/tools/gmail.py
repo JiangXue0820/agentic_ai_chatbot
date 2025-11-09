@@ -46,7 +46,11 @@ class GmailAdapter:
     }
     
     def run(self, **kwargs) -> Dict[str, Any]:
-        count = kwargs.get("count") or kwargs.get("limit", 5)
+        raw_count = kwargs.get("count", kwargs.get("limit", 5))
+        try:
+            count = int(raw_count)
+        except (TypeError, ValueError):
+            count = 5
         query = kwargs.get("filter")
         emails = self.list_recent(limit=count, query=query)
         summary = f"Retrieved {len(emails)} recent email(s)"
@@ -59,49 +63,84 @@ class GmailAdapter:
             "query": query,
         }
     
-    def list_recent(self, limit: int = 5, query: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Return summaries for the most recent Gmail messages."""
+    def list_recent(self, limit: int = 5, query: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
+        """
+        Return summaries for the most recent Gmail messages.
+
+        Accepts both 'limit' (primary) and 'count' (alias) so planner/tool calls remain compatible.
+        """
+        count_override = kwargs.pop("count", None)
+        if count_override is not None:
+            try:
+                limit = int(count_override)
+            except (TypeError, ValueError):
+                limit = 5
+
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 5
+
         if limit > 50:
             limit = 50
         creds = ensure_credentials()
 
         try:
             service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-            list_kwargs = {"userId": "me", "maxResults": limit, "labelIds": ["INBOX"]}
-            if query:
-                list_kwargs["q"] = query
-            response = service.users().messages().list(**list_kwargs).execute()
-            messages = response.get("messages", [])
-            if not messages:
-                return []
-
             results: List[Dict[str, Any]] = []
-            for item in messages:
-                msg = service.users().messages().get(
-                    userId="me",
-                    id=item["id"],
-                    format="metadata",
-                    metadataHeaders=["Subject", "From", "Date"],
-                ).execute()
-                headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
-                subject = self._decode_header(headers.get("subject"))
-                sender = headers.get("from", "")
-                _, email_addr = parseaddr(sender)
-                date_header = headers.get("date")
-                timestamp = self._parse_date(date_header)
+            page_token: Optional[str] = None
 
-                results.append(
-                    {
-                        "id": msg.get("id"),
-                        "threadId": msg.get("threadId"),
-                        "from": sender,
-                        "from_address": email_addr,
-                        "subject": subject,
-                        "date": timestamp,
-                        "snippet": msg.get("snippet", ""),
-                        "labelIds": msg.get("labelIds", []),
-                    }
-                )
+            while len(results) < limit:
+                list_kwargs = {
+                    "userId": "me",
+                    "maxResults": limit,
+                    "labelIds": ["INBOX"],
+                }
+                if query:
+                    list_kwargs["q"] = query
+                if page_token:
+                    list_kwargs["pageToken"] = page_token
+
+                response = service.users().messages().list(**list_kwargs).execute()
+                messages = response.get("messages", [])
+                if not messages:
+                    break
+
+                for item in messages:
+                    msg = service.users().messages().get(
+                        userId="me",
+                        id=item["id"],
+                        format="metadata",
+                        metadataHeaders=["Subject", "From", "Date"],
+                    ).execute()
+                    headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
+                    subject = self._decode_header(headers.get("subject"))
+                    sender = headers.get("from", "")
+                    _, email_addr = parseaddr(sender)
+                    date_header = headers.get("date")
+                    timestamp = self._parse_date(date_header)
+
+                    results.append(
+                        {
+                            "id": msg.get("id"),
+                            "threadId": msg.get("threadId"),
+                            "from": sender,
+                            "from_address": email_addr,
+                            "subject": subject,
+                            "date": timestamp,
+                            "snippet": msg.get("snippet", ""),
+                            "labelIds": msg.get("labelIds", []),
+                        }
+                    )
+                    if len(results) >= limit:
+                        break
+
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+
+            if len(results) > limit:
+                results = results[:limit]
             return results
         except HttpError as exc:
             raise RuntimeError(f"Gmail API error: {exc}") from exc

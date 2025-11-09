@@ -353,6 +353,10 @@ if st.session_state.api_token and st.sidebar.button("🧨 Reset Data"):
             st.session_state.api_token = token
             st.session_state.authenticated = True
             st.session_state.api_base = current_api_base
+            st.session_state.sessions = {}
+            st.session_state.current_session = None
+            st.session_state.ingested_docs = {}
+            st.session_state.ingested_docs_list = []
             st.session_state.sessions_loaded = False
             st.rerun()
         else:

@@ -46,6 +46,7 @@ os.makedirs(os.path.dirname(GMAIL_TOKEN_PATH), exist_ok=True)
 # Other constants
 # =====================================================
 DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
+DEFAULT_LLM_PROVIDER: str = os.getenv("DEFAULT_LLM_PROVIDER", "deepseek")
 DEFAULT_TEMPERATURE: float = float(os.getenv("DEFAULT_TEMPERATURE", "0.7"))
 
 class Settings(BaseSettings):
@@ -73,7 +74,7 @@ class Settings(BaseSettings):
     KNOWLEDGE_PATH: str = KNOWLEDGE_PATH
 
     # LLM Configuration
-    LLM_PROVIDER: str = "deepseek"  # Options: "mock", "deepseek", "gemini", "openai"
+    LLM_PROVIDER: str = DEFAULT_LLM_PROVIDER  # Options: "mock", "deepseek", "gemini", "openai"
     DEFAULT_MODEL: str = DEFAULT_MODEL
     DEFAULT_TEMPERATURE: float = DEFAULT_TEMPERATURE
     

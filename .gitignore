@@ -20,6 +20,7 @@ logs/
 storage/
 *.db
 *.sqlite
+storage/gmail/token.json
 
 # IDE
 .vscode/
