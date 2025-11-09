@@ -20,6 +20,7 @@ class WeatherAdapter:
     # Weather query range limits (days)
     MAX_FORECAST_DAYS = 16
     MAX_HISTORICAL_DAYS = 92
+    TIMEOUT = 10
     
     # Tool metadata for ToolRegistry
     description = "Get weather information for a location - current, forecast, or historical"
@@ -144,7 +145,8 @@ class WeatherAdapter:
         """Convert city name to coordinates."""
         g = requests.get(
             "https://geocoding-api.open-meteo.com/v1/search",
-            params={"name": city, "count": 1}
+            params={"name": city, "count": 1},
+            timeout=self.TIMEOUT
         ).json()
         
         if not g.get("results"):
@@ -154,12 +156,16 @@ class WeatherAdapter:
     
     def _get_current(self, lat: float, lon: float, location: Optional[str]) -> dict:
         """Get current weather."""
-        r = requests.get("https://api.open-meteo.com/v1/forecast", params={
-            "latitude": lat,
-            "longitude": lon,
-            "current_weather": True,
-            "hourly": "relativehumidity_2m"
-        }).json()
+        r = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "current_weather": True,
+                "hourly": "relativehumidity_2m",
+            },
+            timeout=self.TIMEOUT
+        ).json()
         
         cur = r.get("current_weather", {})
         humidity = None
@@ -178,12 +184,16 @@ class WeatherAdapter:
     
     def _get_forecast(self, lat: float, lon: float, location: Optional[str], date: datetime.date) -> dict:
         """Get weather forecast."""
-        r = requests.get("https://api.open-meteo.com/v1/forecast", params={
-            "latitude": lat,
-            "longitude": lon,
-            "daily": "temperature_2m_max,temperature_2m_min,weathercode",
-            "hourly": "relativehumidity_2m"
-        }).json()
+        r = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "daily": "temperature_2m_max,temperature_2m_min,weathercode",
+                "hourly": "relativehumidity_2m",
+            },
+            timeout=self.TIMEOUT
+        ).json()
         
         daily = r.get("daily", {})
         dates = daily.get("time", [])
@@ -220,13 +230,17 @@ class WeatherAdapter:
         """Get historical weather."""
         date_str = date.strftime("%Y-%m-%d")
         
-        r = requests.get("https://archive-api.open-meteo.com/v1/archive", params={
-            "latitude": lat,
-            "longitude": lon,
-            "start_date": date_str,
-            "end_date": date_str,
-            "daily": "temperature_2m_max,temperature_2m_min,weathercode"
-        }).json()
+        r = requests.get(
+            "https://archive-api.open-meteo.com/v1/archive",
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "start_date": date_str,
+                "end_date": date_str,
+                "daily": "temperature_2m_max,temperature_2m_min,weathercode",
+            },
+            timeout=self.TIMEOUT
+        ).json()
         
         daily = r.get("daily", {})
         

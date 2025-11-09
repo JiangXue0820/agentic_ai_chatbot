@@ -60,6 +60,7 @@ class SQLiteStore:
         """Remove every record from all tables."""
         with sqlite3.connect(self.path) as conn:
             conn.execute("DELETE FROM memories")
+            conn.execute("DELETE FROM kb_chunks")
             conn.commit()
 
     def list_session_contexts(self, user_id: str) -> List[Dict[str, Any]]:

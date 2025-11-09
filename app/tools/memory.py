@@ -1,6 +1,6 @@
 from typing import Dict, Any
 
-from app.agent.memory import SessionMemory, LongTermMemoryStore
+from app.agent.memory import LongTermMemoryStore
 
 
 class ConversationMemoryAdapter:
@@ -44,7 +44,12 @@ class ConversationMemoryAdapter:
         query: str = "",
         top_k: int = 5,
     ) -> Dict[str, Any]:
-        results = self.longterm_mem.search(query, top_k=top_k)
+        results = self.longterm_mem.search(
+            query,
+            top_k=top_k,
+            user_id=user_id,
+            session_id=session_id,
+        )
         return {
             "scope": "longterm",
             "query": query,

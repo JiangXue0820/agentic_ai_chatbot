@@ -144,15 +144,24 @@ class LongTermMemoryStore:
         """Delete all stored long-term conversation data."""
         self.vstore.delete_all()
 
-    def search(self, query: str, top_k: int = 3) -> List[Dict]:
+    def search(self, query: str, top_k: int = 3, user_id: str | None = None, session_id: str | None = None) -> List[Dict]:
         """
         Query the long-term memory for semantically related content.
 
         Args:
             query: Natural language query
             top_k: Maximum number of results to return
+            user_id: Optional user identifier used to scope results
+            session_id: Optional session identifier for additional scoping
 
         Returns:
             A list of relevant memory chunks.
         """
-        return self.vstore.query(query, top_k)
+        where: Dict[str, Any] | None = None
+        if user_id:
+            where = {"user_id": user_id}
+            if session_id:
+                where["session_id"] = session_id
+        elif session_id:
+            where = {"session_id": session_id}
+        return self.vstore.query(query, top_k, where=where)

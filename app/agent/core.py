@@ -142,7 +142,12 @@ class Agent:
             logger.warning(f"Failed to parse session context: {e}")
 
         # === 2. Retrieve long-term recall ===
-        longterm_context = self.longterm_mem.search(text, top_k=3)
+        longterm_context = self.longterm_mem.search(
+            text,
+            top_k=3,
+            user_id=user_id,
+            session_id=session_id,
+        )
         merged_context = self._merge_context(context, longterm_context)
 
         # === 3. Intent recognition ===
@@ -322,7 +327,12 @@ class Agent:
             if getattr(intent, "memory_hint", False):
                 memory_query = intent.slots.get("query") or user_query
                 try:
-                    memory_results = self.longterm_mem.search(memory_query, top_k=3)
+                    memory_results = self.longterm_mem.search(
+                        memory_query,
+                        top_k=3,
+                        user_id=user_id,
+                        session_id=session_id,
+                    )
                     if memory_results:
                         intent_context = self._merge_context(context, memory_results)
                         observations.append(self._format_observation({

@@ -30,7 +30,7 @@ async def gmail_summary(req: GmailSummaryRequest, user=Depends(require_bearer)):
 
 @router.post("/weather/current")
 async def weather_current(req: WeatherRequest, user=Depends(require_bearer)):
-    return _weather.current(city=req.city, lat=req.lat, lon=req.lon)
+    return _weather.run(city=req.city, lat=req.lat, lon=req.lon)
 
 @router.post("/vdb/query")
 async def vdb_query(req: VDBQueryRequest, user=Depends(require_bearer)):

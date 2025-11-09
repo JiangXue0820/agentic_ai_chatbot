@@ -75,7 +75,7 @@ class VectorStore:
     # =====================================================
     # Querying
     # =====================================================
-    def query(self, query: str, top_k: int = 3) -> List[Dict]:
+    def query(self, query: str, top_k: int = 3, where: Dict | None = None) -> List[Dict]:
         """
         Perform semantic search against the stored vectors.
 
@@ -92,7 +92,13 @@ class VectorStore:
         """
         out = []
         if _HAVE_CHROMA:
-            res = self.coll.query(query_texts=[query], n_results=top_k)
+            chroma_kwargs = {
+                "query_texts": [query],
+                "n_results": top_k,
+            }
+            if where:
+                chroma_kwargs["where"] = where
+            res = self.coll.query(**chroma_kwargs)
             for i in range(len(res["ids"][0])):
                 metadata = res["metadatas"][0][i] or {}
                 out.append({
@@ -103,6 +109,16 @@ class VectorStore:
                 })
         else:
             # Fallback: cosine similarity using pseudo-random embeddings
+            def matches_filter(meta: Dict | None) -> bool:
+                if not where:
+                    return True
+                if not isinstance(meta, dict):
+                    return False
+                for key, value in where.items():
+                    if meta.get(key) != value:
+                        return False
+                return True
+
             def emb(s):
                 import random
                 random.seed(hash(s) & 0xffffffff)
@@ -115,7 +131,12 @@ class VectorStore:
                 return num / (da * db + 1e-9)
 
             q = emb(query)
-            scored = [(i, cos(q, emb(t))) for i, t in enumerate(self.docs)]
+            scored = []
+            for i, t in enumerate(self.docs):
+                metadata = self.meta[i] if i < len(self.meta) else {}
+                if not matches_filter(metadata):
+                    continue
+                scored.append((i, cos(q, emb(t))))
             scored.sort(key=lambda x: x[1], reverse=True)
 
             for i, s in scored[:top_k]:

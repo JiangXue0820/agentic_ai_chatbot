@@ -1,155 +1,135 @@
-# Agentic AI MVP – Project Documentation
-## Project Overview
+# Agentic AI API – Quick Start & Documentation
 
-This is an **Agentic AI system** exposing a REST API with:
-- **Cross-session memory** (SQLite + Vector DB)
-- **Gmail integration** (OAuth ready, currently mocked)
-- **Weather API** (Open-Meteo by default)
-- **Vector Database** (Chroma/FAISS for knowledge retrieval)
-- **Web UI** (Streamlit demo interface)
+## Overview
+
+Agentic AI ARTc delivers a FastAPI service for a reasoning agent with integrated memory, tool calling, and a Streamlit UI. Key capabilities include:
+
+- Multi-layer memory (short-term buffer, session persistence via SQLite, long-term recall via Chroma vector store)
+- Tool adapters for Gmail, Weather, Vector DB, and conversational memory
+- Pluggable LLM support (mock, DeepSeek, Gemini, OpenAI)
+- Streamlit UI for demos and admin workflows
+- Strong auth & logging guardrails (Bearer token, PII masking, CORS control)
 
 ---
 
 ## Prerequisites
 
 - Python 3.11+
-- (Optional) Docker if you want containerized run
+- PowerShell (Windows) or Bash-compatible shell
+- Optional: Chrome/Firefox for UI testing, Docker for containerized deployment
 
 ---
 
-## Setup
+## Quick Start
 
-### 1. Clone and Navigate
-```bash
-cd agentic_ai_artc
-```
+```powershell
+# 1. Clone and navigate
+git clone https://github.com/JiangXue0820/agentic_ai_chatbot.git
+cd agentic_ai_chatbot
 
-### 2. Create Virtual Environment
-```bash
+# 2. Create & activate virtual environment (inside the repo)
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-```
+.\.venv\Scripts\Activate.ps1        # Windows PowerShell
+# On macOS/Linux: source .venv/bin/activate
 
-### 3. Install Dependencies
-```bash
+# 3. Install dependencies
 pip install -r requirements.txt
-```
 
-### 4. Configure Environment
-```bash
-cp .env.example .env
-```
+# 4. Configure environment
+copy env.example .env               # or: cp env.example .env
+# Edit .env with your API_TOKEN, LLM_PROVIDER, Gmail creds, etc.
 
-Edit `.env` to customize settings (optional for MVP demo):
-- `API_TOKEN`: Bearer token for API authentication
-- `LLM_PROVIDER`: Choose between "mock" (default), "deepseek", "gemini", or "openai"
-- `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY`: For real LLM integration
-- `WEATHER_API`: Choose between "open-meteo" (default, no key) or "openweather"
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`: For real Gmail integration
-
-See `ENV_SETUP.md` for complete configuration guide.
-
----
-
-## Running the Application
-
-### 1. (Optional) Ingest Demo Knowledge Base
-```bash
+# 5. (Optional) Ingest demo knowledge base
 python -m scripts.ingest
-```
 
-This will load sample data about privacy-preserving federated learning into the vector database.
+# 6. Launch FastAPI
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-### 2. Run Backend API
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-
-The API will be available at `http://127.0.0.1:8000`
-
-Check health: `http://127.0.0.1:8000/health`
-
-### 3. Run Web UI (Streamlit)
-
-In a new terminal:
-```bash
-# Windows (PowerShell)
-$env:API_BASE="http://127.0.0.1:8000"
-$env:API_TOKEN="changeme"
+# 7. Launch Streamlit UI in another terminal
+$env:API_BASE = "http://127.0.0.1:8000"
+$env:API_TOKEN = "changeme"
 streamlit run ui/app.py
 
-# Linux/Mac
-export API_BASE=http://127.0.0.1:8000
-export API_TOKEN=changeme
-streamlit run ui/app.py
+# Visit:
+#   API docs: http://127.0.0.1:8000/docs
+#   UI demo : http://localhost:8501
 ```
-
-Open `http://localhost:8501` in your browser.
 
 ---
 
-## Testing the System
+## Environment Configuration
 
-### Web UI Quick Tests
+`.env` (partial):
 
-The UI provides three quick-test buttons:
-
-1. **Gmail: last 5** - Summarizes last 5 emails (currently returns mock data)
-2. **Weather: Singapore** - Gets current weather for Singapore
-3. **VDB: PPFL** - Queries vector DB about privacy-preserving federated learning
-
-### Manual API Testing with cURL
-
-#### 1. Test Agent Invocation (Email Summary)
-```bash
-curl -H "Authorization: Bearer changeme" -X POST http://127.0.0.1:8000/agent/invoke -H 'Content-Type: application/json' -d '{"input":"Summarize my last 5 emails"}'
+```
+API_TOKEN=changeme
+LLM_PROVIDER=mock          # mock | deepseek | gemini | openai
+DEEPSEEK_API_KEY=
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+WEATHER_API=open-meteo
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 ```
 
-#### 2. Test Weather Tool
+Additional notes:
+
+- Weather: switch to `openweather` + `OPENWEATHER_API_KEY` if needed.
+- Gmail: OAuth flow in `app/api/gmail.py` + `app/tools/gmail_oauth.py`.
+- Vector DB: `chromadb` by default, automatic in-memory fallback.
+- LLM: `app/llm/provider.py` selects provider based on `.env`.
+
+---
+
+## Running & Testing
+
+### Health Check
 ```bash
-curl -H "Authorization: Bearer changeme" -X POST http://127.0.0.1:8000/tools/weather/current -H 'Content-Type: application/json' -d '{"city":"Singapore"}'
+curl http://127.0.0.1:8000/health
 ```
 
-#### 3. Test Vector DB Ingestion
+### Invoke Agent
 ```bash
-curl -H "Authorization: Bearer changeme" -X POST http://127.0.0.1:8000/tools/vdb/ingest -H 'Content-Type: application/json' -d '{"items":[{"id":"d1","text":"privacy-preserving federated learning via secure aggregation","metadata":{"source":"demo"}}]}'
+curl -H "Authorization: Bearer changeme" \
+     -X POST http://127.0.0.1:8000/agent/invoke \
+     -H "Content-Type: application/json" \
+     -d '{"input":"Summarize my last 5 emails"}'
 ```
 
-#### 4. Test Vector DB Query
+### Tools
 ```bash
-curl -H "Authorization: Bearer changeme" -X POST http://127.0.0.1:8000/tools/vdb/query -H 'Content-Type: application/json' -d '{"query":"Explain privacy-preserving federated learning","top_k":3}'
+# Weather
+curl -H "Authorization: Bearer changeme" \
+     -X POST http://127.0.0.1:8000/tools/weather/current \
+     -H "Content-Type: application/json" \
+     -d '{"city":"Singapore"}'
+
+# VDB ingest/query
+curl -H "Authorization: Bearer changeme" \
+     -X POST http://127.0.0.1:8000/tools/vdb/ingest \
+     -F "file=@docs/demo.pdf"
+
+curl -H "Authorization: Bearer changeme" \
+     -X POST http://127.0.0.1:8000/tools/vdb/query \
+     -H "Content-Type: application/json" \
+     -d '{"query":"Explain federated learning","top_k":3}'
+```
+
+### Memory API
+```bash
+curl -H "Authorization: Bearer changeme" \
+     -X POST http://127.0.0.1:8000/memory/write \
+     -H "Content-Type: application/json" \
+     -d '{"namespace":"demo","type":"short","content":"hello"}'
+
+curl -H "Authorization: Bearer changeme" \
+     http://127.0.0.1:8000/memory/read?namespace=demo&limit=5
 ```
 
 ### Automated Tests
-
-Run the test suite:
 ```bash
 pytest tests/ -v
 ```
-
----
-
-## API Endpoints
-
-### Agent
-- `POST /agent/invoke` - Main agent endpoint
-  - Request: `{"input": "your question", "tools": ["gmail","weather","vdb"], "memory_keys": []}`
-  - Response: `{"answer": "...", "used_tools": [...], "citations": [...], "steps": [...]}`
-
-### Tools
-- `POST /tools/gmail/summary` - Get recent emails (limit parameter)
-- `POST /tools/weather/current` - Get weather (city or lat/lon)
-- `POST /tools/vdb/ingest` - Ingest knowledge chunks
-- `POST /tools/vdb/query` - Query knowledge base (query, top_k)
-
-### Memory
-- `POST /memory/write` - Write to memory
-  - Request: `{"namespace": "...", "type": "short|long|vector", "content": "...", "ttl": 86400}`
-- `GET /memory/read` - Read from memory
-  - Params: `namespace`, `limit`
-
-### Health
-- `GET /health` - Health check endpoint
 
 ---
 
@@ -158,136 +138,63 @@ pytest tests/ -v
 ```
 agentic_ai_artc/
 ├── app/
-│   ├── main.py                  # FastAPI application entry
-│   ├── api/
-│   │   ├── agent.py            # Agent invocation endpoint
-│   │   ├── memory.py           # Memory read/write endpoints
-│   │   └── tools.py            # Tool endpoints (Gmail, Weather, VDB)
-│   ├── agent/
-│   │   └── core.py             # Agent orchestration logic
-│   ├── llm/
-│   │   └── provider.py         # LLM abstraction (currently mocked)
-│   ├── memory/
-│   │   ├── sqlite_store.py     # SQLite memory storage
-│   │   └── vector_store.py     # Vector DB (Chroma/fallback)
-│   ├── tools/
-│   │   ├── gmail.py            # Gmail adapter (currently mocked)
-│   │   ├── weather.py          # Weather API adapter
-│   │   └── vdb.py              # Vector DB adapter
-│   ├── schemas/
-│   │   └── models.py           # Pydantic models
-│   ├── security/
-│   │   └── auth.py             # Bearer token authentication
-│   └── utils/
-│       ├── config.py           # Configuration settings
-│       └── logging.py          # PII-masked logging
-├── storage/                    # 统一存储根目录
-│   ├── memory/                 # SQLite 数据库存储
-│   │   └── mvp.db             # 对话记忆和上下文
-│   └── vectordb/               # ChromaDB 向量数据库
-│       ├── chroma.sqlite3     # ChromaDB 元数据
-│       └── [embedding files]   # 向量数据文件
-├── ui/
-│   └── app.py                  # Streamlit web interface
-├── scripts/
-│   └── ingest.py               # Knowledge base ingestion script
-├── tests/
-│   ├── test_agent.py
-│   ├── test_tools_weather.py
-│   ├── test_tools_gmail.py
-│   └── test_vdb.py
-├── requirements.txt            # Python dependencies
-├── .env.example                # Environment variables template
-└── README.md                   # This file
+│   ├── main.py                # FastAPI entry point
+│   ├── api/                   # REST routers (/agent, /tools, /memory, /admin, /auth)
+│   ├── agent/                 # Agent core, memory wrapper, planning, toolkit
+│   ├── tools/                 # Gmail, Weather, Vector DB adapters, Conversation memory
+│   ├── memory/                # SQLite store, Vector store abstraction
+│   ├── llm/                   # LLMProvider abstraction
+│   ├── guardrails/            # Security guard for PII masking
+│   ├── security/              # Bearer auth dependency
+│   ├── schemas/               # Pydantic models
+│   └── utils/                 # config, logging, file parsing, text splitter
+├── ui/app.py                  # Streamlit dashboard
+├── scripts/ingest.py          # Demo knowledge ingestion
+├── storage/                   # SQLite DB & Chroma persistence
+├── tests/                     # Pytest suites
+├── requirements.txt
+├── design_document.md         # Spec / instructions
+├── design_report.md           # Architecture overview
+└── README.md                  # This file
 ```
 
 ---
 
-## Configuration Notes
+## Key Features
 
-### Weather API
-- **Default**: Open-Meteo (no API key required)
-- **Alternative**: OpenWeather (set `WEATHER_API=openweather` and provide `OPENWEATHER_API_KEY` in `.env`)
-
-### Gmail Integration
-- **Current**: Mock data for demo purposes
-- **Production**: Implement OAuth 2.0 flow with Google credentials
-  - Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`
-  - Replace mock implementation in `app/tools/gmail.py`
-
-### Vector Database
-- **Preferred**: Chroma (install: `pip install chromadb`)
-- **Fallback**: Hash-based pseudo-embeddings (if Chroma unavailable)
-
-### LLM Provider
-- **Default**: Mock echo implementation (no API key required)
-- **Supported Providers**: 
-  - **DeepSeek**: Cost-effective, excellent Chinese/English support
-  - **Gemini**: Google's LLM with generous free tier
-  - **OpenAI**: GPT-4o-mini, GPT-4, etc.
-- **Configuration**: Set `LLM_PROVIDER` in `.env` to one of: `mock`, `deepseek`, `gemini`, `openai`
-- **Setup**:
-  ```bash
-  # Install LLM dependencies
-  pip install openai>=1.50.0 google-generativeai>=0.3.0
-  
-  # Configure in .env (example for DeepSeek)
-  LLM_PROVIDER=deepseek
-  DEEPSEEK_API_KEY=your-api-key-here
-  ```
-- **API Keys**:
-  - DeepSeek: https://platform.deepseek.com
-  - Gemini: https://ai.google.dev
-  - OpenAI: https://platform.openai.com
-- See `ENV_SETUP.md` for detailed configuration
-
----
-
-## Security Features
-
-1. **Bearer Token Authentication**: All endpoints (except `/health`) require valid bearer token
-2. **PII Masking**: Email addresses and tokens automatically masked in logs
-3. **CORS**: Configurable allowed origins
-4. **Secrets Management**: All sensitive data stored in `.env` file (not committed to git)
-
----
-
-## Next Steps (Production Roadmap)
-
-1. **LLM Integration**: ✅ Complete - Supports DeepSeek, Gemini, and OpenAI
-2. **Gmail OAuth**: Implement full OAuth 2.0 flow with token refresh
-3. **Streaming**: Add SSE/WebSocket for real-time response streaming
-4. **Dockerization**: Add Dockerfile and docker-compose.yml
-5. **Enhanced Privacy**: Expand PII detection and add audit logging
-6. **Multi-tenancy**: Add user management and session-scoped memories
-7. **Rate Limiting**: Implement API rate limits
-8. **RBAC**: Add role-based access control
+- **ReAct-style reasoning** with LLM-driven planning (`Agent._plan_and_execute`)
+- **Unified Tool Registry** to introspect and invoke adapters dynamically
+- **Session & Long-term Memory** with TTL pruning, namespace isolation, vector search filters
+- **Gmail OAuth support** with token refresh management
+- **Weather adapter** with built-in timeouts and optional geocoding
+- **Vector DB ingestion/query** using Chroma persistent client or in-memory fallback
+- **Security Guardrails**: inbound/outbound sanitization, PII masking, centralized auth
+- **Streamlit UI** for login, tool demos, knowledge management
 
 ---
 
 ## Troubleshooting
 
-### Issue: "chromadb not found"
-**Solution**: Install chromadb: `pip install chromadb==0.5.5`  
-(The system will automatically fall back to hash-based embeddings if unavailable)
-
-### Issue: "Module 'app' not found"
-**Solution**: Run commands from project root directory and ensure virtual environment is activated
-
-### Issue: Weather API timeout
-**Solution**: Check internet connection; Open-Meteo is rate-limited for high-frequency requests
-
-### Issue: Port 8000 already in use
-**Solution**: Use different port: `uvicorn app.main:app --port 8001`
+| Issue | Resolution |
+|-------|------------|
+| `chromadb not found` | `pip install chromadb==0.5.5` (or let fallback handle) |
+| `Module 'app' not found` | Ensure commands run from project root with venv activated |
+| Weather timeouts | Check network; Open-Meteo has rate limits |
+| Port 8000 busy | Use `uvicorn app.main:app --port 8001` |
+| Gmail OAuth errors | Confirm Google credentials in `.env` and token storage path |
 
 ---
 
-## License
+## Roadmap
 
-This is an MVP demonstration project. Adapt as needed for your use case.
+1. **LLM streaming** (SSE/WebSocket)
+2. **Full Gmail Inbox experience** with message body summarization
+3. **Docker/Compose** for reproducible deployment
+4. **Advanced RBAC** & multi-tenant isolation
+5. **Audit logging / analytics dashboards**
 
 ---
 
 ## Support
 
-For issues or questions, please refer to the design document (`design_doc.md`) for detailed architecture and requirements.
+For architecture deep dive, see `design_report.md`. To contribute or extend, open issues or feature requests in your tracking system of choice. This MVP is intended as a teaching/demo project—adapt freely for production needs.
