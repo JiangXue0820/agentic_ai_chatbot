@@ -5,6 +5,7 @@ from app.security.auth import require_bearer
 from app.tools.vdb import KnowledgeBaseStore
 from app.agent.memory import LongTermMemoryStore
 from app.memory.sqlite_store import SQLiteStore
+from app.api.agent import agent as running_agent
 
 router = APIRouter()
 
@@ -18,6 +19,15 @@ async def reset_all_data(user=Depends(require_bearer)):
     longterm_store.clear_all()
 
     SQLiteStore().clear_all()
+
+    # Clear in-memory caches held by the running agent instance
+    running_agent.short_mem.clear()
+    running_agent.mem.clear_all()
+    running_agent.longterm_mem.clear_all()
+    vdb_adapter = running_agent.tools.tools.get("vdb")
+    if vdb_adapter and hasattr(vdb_adapter, "store"):
+        vdb_adapter.store.clear_all()
+    running_agent.session_mem = running_agent.session_mem.__class__(running_agent.mem)
 
     return {"status": "ok", "detail": "All knowledge, long-term, and session data cleared."}
 

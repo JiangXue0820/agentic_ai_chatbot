@@ -316,15 +316,54 @@ class Agent:
             done = False
             logger.debug(f"Starting intent loop: {intent.name} with slots={intent.slots}")
 
+            intent_context = context
+            memory_results: List[Dict[str, Any]] = []
+            memory_hits_only = False
+            if getattr(intent, "memory_hint", False):
+                memory_query = intent.slots.get("query") or user_query
+                try:
+                    memory_results = self.longterm_mem.search(memory_query, top_k=3)
+                    if memory_results:
+                        intent_context = self._merge_context(context, memory_results)
+                        observations.append(self._format_observation({
+                            "scope": "longterm",
+                            "results": memory_results
+                        }))
+                        memory_hits_only = True
+                except Exception as e:
+                    logger.error(f"Long-term memory search failed: {e}", exc_info=True)
+
             while not done and round_count < self.max_rounds:
                 round_count += 1
-                step = self._plan_next_step(intent, user_query, steps, observations, context)
+                step = self._plan_next_step(intent, user_query, steps, observations, intent_context)
                 logger.debug(f"Planned step: {step}")
                 if not step:
                     done = True
                     break
 
+                step.memory_used = bool(getattr(intent, "memory_hint", False) and memory_results)
+
                 if step.action and step.action != "finish":
+                    if (
+                        step.action == "vdb"
+                        and memory_hits_only
+                        and intent.name == "query_knowledge"
+                    ):
+                        query = intent.slots.get("query") or user_query
+                        answer = self._direct_llm_qa(query, intent_context)
+                        step.thought += " | Memory satisfied query; skipped VDB."
+                        step.action = "memory_only"
+                        step.observation = {
+                            "answer": answer,
+                            "memory_results": memory_results,
+                        }
+                        step.status = "succeeded"
+                        step.decide_next = False
+                        step.memory_used = True
+                        observations.append(answer)
+                        trace.add_step(step)
+                        steps.append(step)
+                        break
                     if step.action == "memory":
                         step.input.setdefault("user_id", user_id)
                         step.input.setdefault("session_id", session_id)
@@ -355,7 +394,7 @@ class Agent:
                             }
                         if step.action == "vdb" and isinstance(observation, dict) and not observation.get("results"):
                             logger.info("Knowledge search returned no results; falling back to direct LLM QA.")
-                            fallback_answer = self._direct_llm_qa(user_query, context)
+                            fallback_answer = self._direct_llm_qa(user_query, intent_context)
                             observations.append("Knowledge search returned no results about the question.")
                             observations.append(fallback_answer)
                             step.observation = {
@@ -434,7 +473,7 @@ class Agent:
                                 "status": "failed"
                             })
 
-                    answer = rag_answer or self._direct_llm_qa(query, context)
+                    answer = rag_answer or self._direct_llm_qa(query, intent_context)
                     logger.debug(f"QA response ({intent.name}): {answer}")
 
                     observation_payload: Dict[str, Any] = {"answer": answer}
@@ -443,11 +482,7 @@ class Agent:
 
                     step.observation = observation_payload
                     step.status = "succeeded"
-                    if retrieval_used and retrieval_payload:
-                        # ensure answer is last observation for summarization
-                        observations.append(answer)
-                    else:
-                        observations.append(answer)
+                    observations.append(answer)
 
                 trace.add_step(step)   # ✅ replaces steps.append(step)
                 steps.append(step)     # keep legacy list for backward compatibility

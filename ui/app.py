@@ -2,6 +2,7 @@ import os
 import requests
 import streamlit as st
 from datetime import datetime
+import time
 
 # ===============================
 # Config
@@ -439,10 +440,13 @@ with col_send:
 with col_clear:
     clear_clicked = st.button("🧹 Clear", key=f"clear_{sid}")
 
-if st.session_state.get("doc_upload_clear"):
-    st.session_state.doc_upload_clear = False
+if "doc_upload_reset" not in st.session_state:
+    st.session_state.doc_upload_reset = False
+
+if st.session_state.doc_upload_reset:
     if "doc_upload" in st.session_state:
         del st.session_state["doc_upload"]
+    st.session_state.doc_upload_reset = False
 
 with col_upload:
     uploaded_file = st.file_uploader(
@@ -456,7 +460,7 @@ with col_upload:
         file_key = f"{uploaded_file.name}:{len(file_bytes)}"
         if file_key in st.session_state.ingested_docs:
             st.info(f"ℹ️ {uploaded_file.name} is already listed under User Documents.")
-            st.session_state.doc_upload_clear = True
+            st.session_state.doc_upload_reset = True
             st.rerun()
         else:
             files = {
@@ -467,7 +471,7 @@ with col_upload:
                 )
             }
             headers = {"Authorization": f"Bearer {st.session_state.api_token}"}
-            with st.spinner(f"Uploading {uploaded_file.name}..."):
+            with st.spinner(f"Processing {uploaded_file.name}..."):
                 try:
                     res = requests.post(
                         f"{API_BASE}/tools/vdb/ingest",
@@ -489,7 +493,8 @@ with col_upload:
                         if doc_id and uploaded_at:
                             st.session_state.ingested_docs_loaded = False
                             fetch_ingested_documents(force=True)
-                        st.session_state.doc_upload_clear = True
+                        st.session_state.doc_upload_reset = True
+                        time.sleep(1) 
                         st.rerun()
                     elif res.status_code == 400:
                         detail = res.json().get("detail")
@@ -498,7 +503,7 @@ with col_upload:
                         st.error(f"⚠️ Upload failed: {res.status_code} — {res.text[:150]}")
                 except Exception as e:
                     st.error(f"❌ Upload error: {e}")
-                    st.session_state.doc_upload_clear = True
+                    st.session_state.doc_upload_reset = True
                     st.rerun()
 
 if clear_clicked:

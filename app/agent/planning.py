@@ -20,6 +20,7 @@ class Step:
     status: str = "planned"  # planned | running | succeeded | failed | finished
     decide_next: bool = True
     error: Optional[str] = None
+    memory_used: bool = False
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
     def is_finished(self) -> bool:
@@ -48,9 +49,10 @@ class PlanTrace:
                     obs_preview = json.dumps(s.observation, ensure_ascii=False)[:80]
                 else:
                     obs_preview = str(s.observation)[:80]
+            memory_note = " | 🧠 used memory" if getattr(s, "memory_used", False) else ""
             summary_lines.append(
                 f"Step {i}: [{s.status.upper()}] {s.intent} → {s.action or 'None'} | "
-                f"Thought: {s.thought[:60]} | Obs: {obs_preview}"
+                f"Thought: {s.thought[:60]} | Obs: {obs_preview}{memory_note}"
             )
         return "\n".join(summary_lines)
 

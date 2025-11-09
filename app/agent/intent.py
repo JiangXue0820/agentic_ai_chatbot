@@ -18,6 +18,7 @@ class Intent:
     priority: int = 0
     needs_confirmation: bool = False
     clarification_prompt: Optional[str] = None
+    memory_hint: bool = False
 
 
 class IntentRecognizer:
@@ -141,6 +142,7 @@ Return valid JSON with this structure:
                     slots=intent_data.get("slots", {}),
                     confidence=confidence,
                     priority=intent_data.get("priority", 0),
+                    memory_hint=bool(intent_data.get("memory_hint", False)),
                 )
                 intent_list.append(intent)
             
@@ -188,7 +190,7 @@ Return valid JSON with this structure:
             return [Intent("get_weather", slots, 0.8)]
         
         # Email keywords
-        email_keywords = ["email", "邮件", "gmail", "inbox", "收件箱", "summarize"]
+        email_keywords = ["email", "邮件", "gmail", "inbox", "收件箱"]
         if any(kw in text_lower for kw in email_keywords):
             count = 5  # default
             # Extract count
@@ -203,6 +205,55 @@ Return valid JSON with this structure:
                 priority=0
             )]
         
+        note_keywords = [
+            "note down",
+            "remember that",
+            "记一下",
+            "帮我记",
+            "记住",
+        ]
+        if any(kw in text_lower for kw in note_keywords):
+            return [Intent(
+                name="note_down",
+                slots={"text": text},
+                confidence=0.9,
+                priority=0,
+            )]
+
+        # Prefer long-term memory when user asks "search my ..."
+        memory_search_patterns = [
+            r"(?:search|find)\s+my\s+",
+            r"(?:look\s+up|查找|搜索)\s*我的"
+        ]
+        if any(re.search(pattern, text_lower) for pattern in memory_search_patterns):
+            return [Intent(
+                name="query_knowledge",
+                slots={"query": text},
+                confidence=0.85,
+                priority=0,
+                memory_hint=True,
+            )]
+
+        # =====================================================
+        # Detect queries that may require long-term memory context
+        # =====================================================
+        memory_related_patterns = [
+            r"(?:上次|之前|last time|previous|remember|recall|继续|继续上次).*",
+            r".*你还记得.*",
+        ]
+        if any(re.search(pattern, text_lower) for pattern in memory_related_patterns):
+            base_intent = "general_qa"
+            knowledge_hints = ["search", "find", "查找", "搜索", "文档", "资料", "knowledge"]
+            if any(kw in text_lower for kw in knowledge_hints):
+                base_intent = "query_knowledge"
+            return [Intent(
+                name=base_intent,
+                slots={"query": text},
+                confidence=0.8,
+                priority=0,
+                memory_hint=True,
+            )]
+
         # Conversation recall keywords
         recall_keywords = [
             "what did i ask",
@@ -218,21 +269,6 @@ Return valid JSON with this structure:
                 slots={"query": text},
                 confidence=0.8,
                 priority=0
-            )]
-
-        note_keywords = [
-            "note down",
-            "remember that",
-            "记一下",
-            "帮我记",
-            "记住",
-        ]
-        if any(kw in text_lower for kw in note_keywords):
-            return [Intent(
-                name="note_down",
-                slots={"text": text},
-                confidence=0.9,
-                priority=0,
             )]
 
         # General knowledge/QA or potential knowledge-related
