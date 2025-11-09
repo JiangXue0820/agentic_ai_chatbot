@@ -88,19 +88,19 @@ graph TD
     API -->|/agent/invoke| AgentCore[Agent Orchestrator]
     API -->|/tools/*| ToolAdapters
     API -->|/memory/*| MemoryAPI
-    AgentCore --> ShortMem[ShortTermMemory (RAM)]
-    AgentCore --> SessionMem[SessionMemory (SQLite)]
-    AgentCore --> LongMem[LongTermMemoryStore (Chroma/Memory)]
-    AgentCore --> IntentLLM[LLMProvider]
-    ToolAdapters --> Weather[WeatherAdapter (Open-Meteo)]
-    ToolAdapters --> Gmail[GmailAdapter (Gmail REST)]
-    ToolAdapters --> VDB[VectorDB Adapter (Chroma)]
+    AgentCore --> ShortMem["ShortTermMemory (RAM)"]
+    AgentCore --> SessionMem["SessionMemory (SQLite)"]
+    AgentCore --> LongMem["LongTermMemoryStore (Chroma/Memory)"]
+    AgentCore --> IntentLLM["LLMProvider"]
+    ToolAdapters --> Weather["WeatherAdapter (Open-Meteo)"]
+    ToolAdapters --> Gmail["GmailAdapter (Gmail REST)"]
+    ToolAdapters --> VDB["VectorDB Adapter (Chroma)"]
     LongMem --> VectorStore
     SessionMem --> SQLite[(SQLite sessionMem/mvp.db)]
-    VectorStore -->|persist| Storage[(storage/knowledgebase, storage/memory)]
-    UI -.-> AdminAPI[/admin/bootstrap/reset/]
-    Security[SecurityGuard + Auth] --> AgentCore
-    API --> Auth[Auth Router]
+    VectorStore -->|persist| Storage["storage/knowledgebase, storage/memory"]
+    UI -.-> AdminAPI["/admin/bootstrap/reset/"]
+    Security["SecurityGuard + Auth"] --> AgentCore
+    API --> Auth["Auth Router"]
 ```
 
 ## 🧠 Core Components Summary
