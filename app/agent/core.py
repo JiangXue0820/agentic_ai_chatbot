@@ -64,8 +64,52 @@ class Agent:
     # =====================================================
     # === Public API ===
     # =====================================================
+    def _secure_inbound(self, text: str) -> str:
+        """
+        Secure inbound text by validating and sanitizing.
+        """
+        masked_input = text
+        check = self.guard.inbound(text)
+        if not check["safe"]:
+            # Unsafe query, blocked before processing
+            return {
+                "type": "answer",
+                "answer": check["text"],
+                "secure_mode": True,
+                "masked_input": None,
+                "intents": [],
+                "steps": [],
+                "used_tools": [],
+                "citations": [],
+            }
+        masked_input = check["text"]
+        return masked_input
 
-    def handle(self, user_id: str, text: str, session_id: str = "default") -> Dict:
+    def _secure_outbound(self, result: Dict) -> Dict:
+        """
+        Secure outbound text by validating and sanitizing.
+        """
+        if "answer" not in result:
+            return result
+
+        answer = result["answer"]
+
+        # inbound had masked PII
+        if getattr(self.guard, "mask_map", None):
+            # unmask known placeholders
+            for original, mask in self.guard.mask_map.items():
+                answer = answer.replace(mask, original)
+
+        # mask new PII if any
+        result["answer"] = self.guard.outbound(answer)["text"]
+        result["secure_mode"] = True
+
+        # reset for next round
+        self.guard.mask_map.clear()
+        return result
+
+
+    def handle(self, user_id: str, text: str, session_id: str = "default", secure_mode: bool = False) -> Dict:
         """
         Main entry point for processing a user query.
         Pipeline:
@@ -77,6 +121,12 @@ class Agent:
           6. Return structured output
         """
         logger.info(f"Handling query for user {user_id}: {text[:100]}")
+
+        if secure_mode:
+            masked_input = self._secure_inbound(text)
+            if isinstance(masked_input, dict) and masked_input.get("type") == "answer":
+                return masked_input
+            text = masked_input
 
         # === 1. Load memory context ===
         context = self.short_mem.get_context()
@@ -131,19 +181,25 @@ class Agent:
         self.short_mem.add("assistant", result.get("answer", ""))
         updated_context = self.short_mem.get_context()
 
+        prev_saved = session_data.get("longterm_saved", 0)
+
         session_data = {
             "last_intents": [asdict(i) for i in intents] if isinstance(intents, list) else [],
             "last_steps": result.get("steps", []),
             "conversation_history": updated_context,
-            "clarification_pending": None
+            "clarification_pending": None,
+            "longterm_saved": len(updated_context)
         }
         self.session_mem.write(user_id, session_id, "context", json.dumps(session_data), None)
 
-        snapshot = self.session_mem.to_longterm_snapshot(user_id, session_id)
-        if snapshot:
-            self.longterm_mem.store_conversation(user_id, session_id, snapshot)
+        if prev_saved < len(updated_context):
+            new_messages = updated_context[prev_saved:]
+            self.longterm_mem.store_conversation(user_id, session_id, new_messages, start_index=prev_saved)
 
         logger.info("Memory updated successfully.")
+
+        if secure_mode and "answer" in result:
+            result = self._secure_outbound(result)
         return result
 
     def resume(self, user_id: str, user_reply: str, session_id: str = "default") -> Dict:

@@ -1,27 +1,35 @@
 ﻿from pydantic import BaseModel, Field
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
+
 
 class AgentInvokeRequest(BaseModel):
     input: str
     session_id: str = "default"
-    context: dict[str, Any] | None = None
-    tools: list[str] | None = None
-    memory_keys: list[str] | None = None
+    secure_mode: bool = False
+    context: Optional[Dict[str, Any]] = None
+    tools: Optional[List[str]] = None
+    memory_keys: Optional[List[str]] = None
 
 class ToolCall(BaseModel):
     name: str
-    inputs: dict
-    outputs: dict | None = None
+    inputs: Dict[str, Any]
+    outputs: Optional[Dict[str, Any]] = None
 
 class AgentResponse(BaseModel):
     type: str = "answer"  # "answer" or "clarification"
     answer: str = ""
     intents: List[dict] = Field(default_factory=list)
-    steps: List[dict] = Field(default_factory=list)  # Changed from List[str] to List[dict]
-    used_tools: List[dict] = Field(default_factory=list)  # Changed from List[ToolCall] to List[dict] for flexibility
+    steps: List[dict] = Field(default_factory=list)
+    used_tools: List[dict] = Field(default_factory=list)
     citations: List[dict] = Field(default_factory=list)
-    message: Optional[str] = None  # For clarification type
-    options: Optional[List[str]] = None  # For clarification type
+
+    # Clarification fields
+    message: Optional[str] = None
+    options: Optional[List[str]] = None
+
+    # 🔒 Security-related fields
+    secure_mode: bool = False
+    masked_input: Optional[str] = None
 
 class MemoryWrite(BaseModel):
     namespace: str

@@ -21,11 +21,13 @@ if "sessions" not in st.session_state:
     st.session_state.sessions = {}
 if "current_session" not in st.session_state:
     st.session_state.current_session = None
+if "secure_mode" not in st.session_state:
+    st.session_state.secure_mode = False  # 默认关闭安全模式
 
 # ===============================
 # Helper Functions
 # ===============================
-def call_agent_api(query: str, session_id: str) -> dict | None:
+def call_agent_api(query: str, session_id: str, secure_mode: bool = False) -> dict | None:
     """统一封装 Agent API 调用与错误处理"""
     token = st.session_state.api_token
     headers = {"Authorization": f"Bearer {token}"}
@@ -33,7 +35,11 @@ def call_agent_api(query: str, session_id: str) -> dict | None:
     try:
         r = requests.post(
             f"{API_BASE}/agent/invoke",
-            json={"input": query, "session_id": session_id},
+            json={
+                "input": query,
+                "session_id": session_id,
+                "secure_mode": secure_mode
+            },
             headers=headers,
             timeout=30,
         )
@@ -42,11 +48,7 @@ def call_agent_api(query: str, session_id: str) -> dict | None:
             st.error(f"❌ API Error {r.status_code}: {r.text[:200]}")
             return None
 
-        try:
-            return r.json()
-        except ValueError:
-            st.error(f"❌ Invalid JSON response: {r.text[:200]}")
-            return None
+        return r.json()
 
     except requests.exceptions.Timeout:
         st.error("⏱️ Request timeout - Agent took too long to respond")
@@ -115,7 +117,7 @@ if not st.session_state.authenticated:
     st.stop()  # 不渲染主界面，直接停在登录页
 
 # ===============================
-# Sidebar - Session List
+# Sidebar - Session List + Settings
 # ===============================
 st.sidebar.title("💬 Sessions")
 
@@ -129,6 +131,16 @@ for sid, sess in sorted(st.session_state.sessions.items(), reverse=True):
     if st.sidebar.button(f"{'🟢' if active else '⚪'} {title}", key=f"s_{sid}"):
         st.session_state.current_session = sid
         st.rerun()
+
+st.sidebar.divider()
+
+# 🛡️ Secure Mode Toggle
+st.sidebar.subheader("Security")
+st.session_state.secure_mode = st.sidebar.toggle("Enable Secure Mode", value=st.session_state.secure_mode)
+if st.session_state.secure_mode:
+    st.sidebar.success("🟢 Secure Mode is ON")
+else:
+    st.sidebar.warning("⚪ Secure Mode is OFF")
 
 st.sidebar.divider()
 st.sidebar.caption("⚙️ Settings")
@@ -147,6 +159,7 @@ if st.sidebar.button("🚪 Logout"):
     st.session_state.authenticated = False
     st.session_state.api_token = None
     st.rerun()
+
 
 # ===============================
 # Main Chat Window
@@ -185,6 +198,15 @@ with chat_box:
                 unsafe_allow_html=True,
             )
 
+            # 🔒 show masked input version if applicable
+            if msg.get("masked_input"):
+                st.markdown(
+                    f"<div style='text-align:{align};font-size:0.8em;color:#666;font-style:italic;'>"
+                    f"🔒 Protected version: {msg['masked_input']}</div>",
+                    unsafe_allow_html=True,
+                )
+
+
 # ===============================
 # Input Area
 # ===============================
@@ -203,13 +225,19 @@ if send_clicked and user_input.strip():
     session["messages"].append({"role": "user", "content": user_input})
     rename_session_if_first_message(sid, user_input)
 
-    data = call_agent_api(user_input, sid)
+    # ✅ 传入 secure_mode 参数
+    data = call_agent_api(user_input, sid, st.session_state.secure_mode)
     if data:
+        # 如果返回 masked_input，在用户输入下方展示
+        if data.get("masked_input"):
+            session["messages"][-1]["masked_input"] = data["masked_input"]
+
         answer = data.get("answer", str(data))
         session["messages"].append({"role": "assistant", "content": answer})
         st.rerun()
     else:
         st.warning("💡 Try rephrasing your question or check the API server status")
+
 
 # ===============================
 # Recommended Queries
@@ -226,8 +254,10 @@ for i, q in enumerate(recommendations):
     if query_cols[i].button(q):
         session["messages"].append({"role": "user", "content": q})
         rename_session_if_first_message(sid, q)
-        data = call_agent_api(q, sid)
+        data = call_agent_api(q, sid, st.session_state.secure_mode)
         if data:
+            if data.get("masked_input"):
+                session["messages"][-1]["masked_input"] = data["masked_input"]
             answer = data.get("answer", str(data))
             session["messages"].append({"role": "assistant", "content": answer})
             st.rerun()

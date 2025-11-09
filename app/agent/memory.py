@@ -4,6 +4,7 @@
 # =====================================================
 
 from typing import List, Dict, Any
+import uuid
 from app.memory.sqlite_store import SQLiteStore
 from app.memory.vector_store import VectorStore
 from app.utils.config import LONGTERM_PATH
@@ -112,7 +113,7 @@ class LongTermMemoryStore:
             collection="longterm_mem"
         )
 
-    def store_conversation(self, user_id: str, session_id: str, messages: List[Dict]):
+    def store_conversation(self, user_id: str, session_id: str, messages: List[Dict], start_index: int = 0):
         """
         Convert and store conversation messages into long-term memory.
 
@@ -122,17 +123,18 @@ class LongTermMemoryStore:
             messages: List of dicts with "role" and "content"
         """
         docs = []
-        for i, m in enumerate(messages):
+        for offset, m in enumerate(messages):
             text = m.get("content", "")
             if not text:
                 continue
             docs.append({
-                "id": f"{user_id}_{session_id}_{i}",
+                "id": f"{user_id}_{session_id}_{start_index + offset}_{uuid.uuid4().hex}",
                 "text": text,
                 "metadata": {
                     "user_id": user_id,
                     "session_id": session_id,
-                    "role": m.get("role", "user")
+                    "role": m.get("role", "user"),
+                    "turn_index": start_index + offset,
                 }
             })
         if docs:
