@@ -92,6 +92,7 @@ graph TD
     AgentCore --> SessionMem["SessionMemory (SQLite)"]
     AgentCore --> LongMem["LongTermMemoryStore (Chroma/Memory)"]
     AgentCore --> IntentLLM["LLMProvider"]
+    AgentCore -- ToolRegistry.invoke --> ToolAdapters
     ToolAdapters --> Weather["WeatherAdapter (Open-Meteo)"]
     ToolAdapters --> Gmail["GmailAdapter (Gmail REST)"]
     ToolAdapters --> VDB["VectorDB Adapter (Chroma)"]
@@ -125,7 +126,7 @@ flowchart TD
 
     %% relationships
     A --> M
-    A -->|ToolRegistry.invoke()| R
+    A -->|ToolRegistry.invoke| R
     R -->|manages / loads| TA1
     R -->|manages / loads| TA2
     R -->|manages / loads| TA3
