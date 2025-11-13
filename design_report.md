@@ -698,7 +698,6 @@ sequenceDiagram
     Agent->>Guard: _secure_inbound(text)
     Guard-->>Agent: {"safe": true, "text": "Note my phone [MOBILE_1] and birthday 8/20"}
     Agent->>Context: store masked content
-    Note over Agent,Context: Later retrieval returns masked value
     User->>API: {"input": "what is my phone number and birthday", "secure_mode": true}
     API->>Agent: handle(..., secure_mode=true)
     Agent->>Context: load short/session/long memories (masked)
