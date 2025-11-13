@@ -30,7 +30,7 @@ async def invoke(req: AgentInvokeRequest, user=Depends(require_bearer)):
             f"input={req.input[:100]}"
         )
 
-        # === 1️⃣ Call core agent logic ===
+        # === Call core agent logic ===
         result = agent.handle(
             user_id=user["user_id"],
             text=req.input,
@@ -38,7 +38,7 @@ async def invoke(req: AgentInvokeRequest, user=Depends(require_bearer)):
             secure_mode=req.secure_mode,
         )
 
-        # === 2️⃣ Normalize response to fit AgentResponse schema ===
+        # === Normalize response to fit AgentResponse schema ===
         if not isinstance(result, dict):
             logger.warning("Agent returned non-dict result; coercing to dict")
             result = {"answer": str(result)}

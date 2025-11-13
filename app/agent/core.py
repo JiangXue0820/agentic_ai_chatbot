@@ -146,7 +146,7 @@ class Agent:
         if enhanced_query != text:
             logger.info(f"Query enhanced: '{text}' -> '{enhanced_query[:100]}'")
 
-        # === 3. Intent recognition (without long-term memory) ===
+        # === 3. Intent recognition ===
         # Use enhanced query for intent recognition, but only with short-term and session context
         intents = self._recognize_intents(enhanced_query, context)
         logger.debug(f"Recognized intents: {intents}")
@@ -542,14 +542,14 @@ Enhance the query if it's incomplete or refers to previous context. Return only 
                         step.status = "failed"
                         step.error = str(e)
                         logger.error(f"Tool {step.action} invocation raised exception: {e}", exc_info=True)
-                        trace.add_step(step)  # ✅ record even failed step
+                        trace.add_step(step)  # record even failed step
                         return {
                             "type": "clarification",
                             "message": f"Tool {step.action} failed: {e}. Retry?",
                             "options": ["Retry", "Cancel"],
                             "steps": [asdict(s) for s in steps],
                             "intents": [asdict(i) for i in intents],
-                            "trace": trace.to_dict()  # ✅ new field
+                            "trace": trace.to_dict()  # new field
                         }
                 elif intent.name in ("general_qa", "potential_knowledge_qa"):
                     query = intent.slots.get("query") or user_query
@@ -601,7 +601,7 @@ Enhance the query if it's incomplete or refers to previous context. Return only 
                     step.status = "succeeded"
                     observations.append(answer)
 
-                trace.add_step(step)   # ✅ replaces steps.append(step)
+                trace.add_step(step)   # replaces steps.append(step)
                 steps.append(step)     # keep legacy list for backward compatibility
 
                 should_continue = step.decide_next if step.action != "finish" else False

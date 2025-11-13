@@ -54,11 +54,11 @@ class SecurityGuard:
         if any(bad in lowered for bad in self.blocked_keywords):
             return {"safe": False, "text": "sorry, I cannot answer this question", "reason": "unsafe_output"}
 
-        # 1️⃣ Unmask inbound placeholders
+        # Unmask inbound placeholders
         for original, mask in self.mask_map.items():
             text = text.replace(mask, original)
 
-        # 2️⃣ Detect and sanitize new PII
+        # Detect and sanitize new PII
         pii_found = []
         for ptype, pattern in self.pii_patterns.items():
             for m in re.findall(pattern, text):
@@ -67,7 +67,7 @@ class SecurityGuard:
         if pii_found:
             text = self._sanitize_pii_output(text, pii_found)
 
-        # 3️⃣ Clear map to prevent leakage across queries
+        # Clear map to prevent leakage across queries
         self.mask_map.clear()
 
         return {"safe": True, "text": text}
