@@ -1,12 +1,12 @@
-# Core dependencies
-numpy>=1.24.0,<2.0.0  # Explicit version for Windows compatibility
+# Core dependencies#
+numpy>=1.24.0,<2.0.0   
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
-pydantic==2.11.10  # Updated from 2.9.2
+pydantic==2.11.10  
 pydantic-settings==2.5.2
-annotated-types>=0.7.0  # Required by pydantic
-python-dotenv==1.1.1  # Updated from 1.0.1
-requests==2.32.5  # Updated from 2.32.3
+annotated-types>=0.7.0  
+python-dotenv==1.1.1  
+requests==2.32.5  
 python-multipart==0.0.9
 streamlit==1.39.0
 
@@ -16,7 +16,7 @@ python-docx==0.8.11
 markdown==3.6
 
 # Vector store
-chromadb==0.5.5
+chromadb>=1.0.0,<2.0.0
 
 # Google API (Gmail integration)
 google-api-python-client==2.149.0

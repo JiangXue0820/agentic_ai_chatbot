@@ -114,9 +114,9 @@ class Agent:
         Main entry point for processing a user query.
         Pipeline:
           1. Load short-term and session context
-          2. Retrieve long-term recall
+          2. Enhance incomplete query with short-term and session memory
           3. Recognize intents (clarify if needed)
-          4. Plan and execute
+          4. Plan and execute (long-term memory only when explicitly requested)
           5. Update memories
           6. Return structured output
         """
@@ -141,21 +141,14 @@ class Agent:
         except Exception as e:
             logger.warning(f"Failed to parse session context: {e}")
 
-        # === 2. Retrieve long-term recall ===
-        try:
-            longterm_context = self.longterm_mem.search(
-                text,
-                top_k=3,
-                user_id=user_id,
-                session_id=session_id,
-            )
-        except Exception as e:
-            logger.error(f"Long-term memory search failed: {e}", exc_info=True)
-            longterm_context = []
-        merged_context = self._merge_context(context, longterm_context)
+        # === 2. Enhance incomplete query with short-term and session memory ===
+        enhanced_query = self._enhance_query_with_context(text, context, session_data)
+        if enhanced_query != text:
+            logger.info(f"Query enhanced: '{text}' -> '{enhanced_query[:100]}'")
 
-        # === 3. Intent recognition ===
-        intents = self._recognize_intents(text, merged_context)
+        # === 3. Intent recognition (without long-term memory) ===
+        # Use enhanced query for intent recognition, but only with short-term and session context
+        intents = self._recognize_intents(enhanced_query, context)
         logger.debug(f"Recognized intents: {intents}")
         if isinstance(intents, dict) and intents.get("type") == "clarification":
             pending_context = {
@@ -207,8 +200,9 @@ class Agent:
                 "trace": PlanTrace(user_query=text).to_dict(),
             }
 
-        # === 4. Plan and execute ===
-        result = self._plan_and_execute(user_id, text, intents, merged_context, session_id)
+        # === 4. Plan and execute (long-term memory only when explicitly requested) ===
+        # Use context without long-term memory initially
+        result = self._plan_and_execute(user_id, enhanced_query, intents, context, session_id)
         logger.debug(f"Plan and execute result: {result.get('type')} | steps={len(result.get('steps', []))}")
         
         # Ensure result has answer field
@@ -233,7 +227,7 @@ class Agent:
 
         # === 5. Update memories ===
         try:
-            self.short_mem.add("user", text)
+            self.short_mem.add("user", text)  # Store original query, not enhanced
             self.short_mem.add("assistant", result.get("answer", ""))
         except Exception as e:
             logger.error(f"Failed to update short-term memory: {e}", exc_info=True)
@@ -310,6 +304,84 @@ class Agent:
     # === Internal Methods ===
     # =====================================================
 
+    def _enhance_query_with_context(self, query: str, short_context: List[Dict[str, str]], session_data: Dict) -> str:
+        """
+        Enhance incomplete query using short-term and session memory.
+        Returns enhanced query if incomplete, original query otherwise.
+        """
+        # Check if query seems incomplete (very short, missing context, pronouns without referents)
+        query_lower = query.lower().strip()
+        
+        # Heuristics for incomplete queries:
+        # 1. Very short queries (< 10 chars) that might need context
+        # 2. Queries with pronouns (it, that, this, them, etc.) that might refer to previous context
+        # 3. Queries that are fragments (no verb, just nouns)
+        
+        incomplete_indicators = [
+            len(query) < 10,
+            any(pronoun in query_lower for pronoun in ["it", "that", "this", "them", "those", "these", "他", "它", "那", "这"]),
+            # Check if query is a fragment (simple heuristic: no common verbs)
+            not any(verb in query_lower for verb in ["is", "are", "was", "were", "do", "does", "did", "can", "will", "get", "show", "tell", "find", "search", "是", "有", "做", "找", "搜索"])
+        ]
+        
+        if not any(incomplete_indicators):
+            return query
+        
+        # Query seems incomplete, try to enhance with context
+        if not short_context and not session_data.get("conversation_history"):
+            return query  # No context available
+        
+        # Build context summary
+        context_summary = []
+        if short_context:
+            for msg in short_context[-3:]:  # Last 3 turns
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if content:
+                    context_summary.append(f"{role}: {content}")
+        
+        if session_data.get("conversation_history"):
+            history = session_data["conversation_history"]
+            if isinstance(history, list):
+                for msg in history[-2:]:  # Last 2 from session
+                    role = msg.get("role", "")
+                    content = msg.get("content", "")
+                    if content and content not in context_summary:
+                        context_summary.append(f"{role}: {content}")
+        
+        if not context_summary:
+            return query
+        
+        # Use LLM to enhance query with context
+        try:
+            system_prompt = """You are a query enhancement assistant. If the user's query is incomplete or refers to previous context, enhance it by incorporating relevant information from the conversation history. If the query is already complete, return it as-is.
+
+Return only the enhanced query, no explanations."""
+            
+            context_text = "\n".join(context_summary)
+            user_prompt = f"""Conversation history:
+{context_text}
+
+User's current query: {query}
+
+Enhance the query if it's incomplete or refers to previous context. Return only the enhanced query."""
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
+            
+            enhanced = self.llm.chat(messages)
+            enhanced = enhanced.strip()
+            
+            # Only use enhanced query if it's meaningfully different and longer
+            if enhanced and len(enhanced) > len(query) * 1.2:
+                return enhanced
+        except Exception as e:
+            logger.warning(f"Query enhancement failed: {e}")
+        
+        return query
+
     def _recognize_intents(self, text: str, context: List[Dict[str, str]]) -> List[Intent] | Dict:
         """Use LLM to identify structured intents."""
         try:
@@ -346,7 +418,9 @@ class Agent:
             intent_context = context
             memory_results: List[Dict[str, Any]] = []
             memory_hits_only = False
-            if getattr(intent, "memory_hint", False):
+            
+            # === Only retrieve long-term memory for explicit recall requests ===
+            if intent.name == "recall_conversation" or getattr(intent, "memory_hint", False):
                 memory_query = intent.slots.get("query") or user_query
                 try:
                     memory_results = self.longterm_mem.search(
@@ -362,6 +436,7 @@ class Agent:
                             "results": memory_results
                         }))
                         memory_hits_only = True
+                        logger.info(f"Retrieved {len(memory_results)} long-term memory results for recall request")
                 except Exception as e:
                     logger.error(f"Long-term memory search failed: {e}", exc_info=True)
 
@@ -376,6 +451,16 @@ class Agent:
                 step.memory_used = bool(getattr(intent, "memory_hint", False) and memory_results)
 
                 if step.action and step.action != "finish":
+                    # Prevent LLM from calling memory tool unless intent is recall_conversation
+                    if step.action == "memory" and intent.name != "recall_conversation":
+                        logger.warning(f"LLM tried to call memory tool for intent {intent.name}, skipping")
+                        step.thought += " | Memory tool skipped (not a recall request)"
+                        step.action = "finish"
+                        step.status = "skipped"
+                        trace.add_step(step)
+                        steps.append(step)
+                        continue
+                    
                     if (
                         step.action == "vdb"
                         and memory_hits_only
@@ -575,6 +660,14 @@ class Agent:
 You are a reasoning assistant that plans step-by-step actions to complete user intents.
 You have access to these tools:
 {json.dumps(tool_info, indent=2)}
+
+IMPORTANT RULES:
+1. Only use the 'memory' tool when the intent is 'recall_conversation' or when the user explicitly asks to recall previous conversations.
+2. Do NOT use 'memory' for other intents like:
+   - summarize_emails: Use 'gmail' tool directly
+   - get_weather: Use 'weather' tool directly
+   - query_knowledge: Use 'vdb' tool directly
+   - general_qa: Answer directly without tools
 
 Respond in JSON:
 {{

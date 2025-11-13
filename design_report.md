@@ -127,10 +127,16 @@ graph TD
     Auth --> AgentHandle[Agent.handle]
     AgentHandle --> SecureCheck{secure mode on?}
     SecureCheck -->|Yes| SecureIn[_secure_inbound masks input]
-    SecureIn --> Context[ShortTermMemory + SessionMemory + LongTermMemory]
+    SecureIn --> Context[Load ShortTermMemory + SessionMemory]
     SecureCheck -->|No| Context
-    Context --> Intent["IntentRecognizer\n(LLMProvider.chat)"]
-    Intent --> Plan["_plan_and_execute\n(ToolRegistry.describe)"]
+    Context --> EnhanceQuery{Query incomplete?}
+    EnhanceQuery -->|Yes| QueryEnhance[_enhance_query_with_context]
+    QueryEnhance --> Intent["IntentRecognizer\n(LLMProvider.chat)"]
+    EnhanceQuery -->|No| Intent
+    Intent --> CheckRecall{Recall requested?}
+    CheckRecall -->|Yes| LongMem[LongTermMemory.search]
+    CheckRecall -->|No| Plan
+    LongMem --> Plan["_plan_and_execute\n(ToolRegistry.describe)"]
     Plan --> Exec["ToolRegistry.invoke\n(Weather/Gmail/VDB/Memory)"]
     Exec --> LoopCheck{Finished?}
     LoopCheck -->|No| Plan
@@ -177,50 +183,46 @@ async def require_bearer(authorization: str = Header(None)):
             text = masked_input
 ```
 
-3. **Read conversation context** – the agent recreates working context by merging short-term memory, the persisted session snapshot, and long-term semantic recall (source: `app/agent/core.py`).
+3. **Read conversation context and enhance query** – the agent recreates working context by loading short-term memory and session snapshot. If the query appears incomplete (contains pronouns, is very short, or lacks verbs), it uses short-term and session memory to enhance the query. Long-term memory is only retrieved when the user explicitly requests to recall previous conversations (source: `app/agent/core.py`).
 
-```132:135:app/agent/core.py
-        context = self.short_mem.get_context()
-        session_ctx = self.session_mem.read(user_id, session_id, "context")
-        session_data = {}
-```
-
-```139:152:app/agent/core.py
+```132:151:app/agent/core.py
         context = self.short_mem.get_context()
         session_ctx = self.session_mem.read(user_id, session_id, "context")
         ...
-        longterm_context = self.longterm_mem.search(
-            text,
-            top_k=3,
-            user_id=user_id,
-            session_id=session_id,
-        )
-        merged_context = self._merge_context(context, longterm_context)
+        # Enhance incomplete query with short-term and session memory
+        enhanced_query = self._enhance_query_with_context(text, context, session_data)
+        # Intent recognition uses only short-term and session context
+        intents = self._recognize_intents(enhanced_query, context)
 ```
 
-4. **Intent recognition** – the agent calls `IntentRecognizer` (backed by `LLMProvider.chat`) to translate the user request plus merged context into structured intents, enabling downstream planning (source: `app/agent/core.py`, `app/agent/intent.py`).
+4. **Intent recognition** – the agent calls `IntentRecognizer` (backed by `LLMProvider.chat`) to translate the enhanced query plus short-term/session context into structured intents, enabling downstream planning (source: `app/agent/core.py`, `app/agent/intent.py`).
 
-```153:175:app/agent/core.py
-        intents = self._recognize_intents(text, merged_context)
+```151:158:app/agent/core.py
+        intents = self._recognize_intents(enhanced_query, context)
         if isinstance(intents, dict) and intents.get("type") == "clarification":
             self.session_mem.write(user_id, session_id, "pending_context", json.dumps(pending_context))
             return intents
 ```
 
-5. **Plan & tool execution** – `_plan_and_execute` repeatedly uses `ToolRegistry.describe()` to provide the LLM with tool metadata, then `ToolRegistry.invoke()` to execute the chosen adapter, collect observations, and handle failures gracefully (source: `app/agent/core.py`, `app/agent/toolkit.py`).
+5. **Plan & tool execution** – `_plan_and_execute` checks if the intent requires long-term memory recall. Only when the intent is `recall_conversation` or has `memory_hint=True`, it retrieves long-term memory. The planner then uses `ToolRegistry.describe()` to provide the LLM with tool metadata, and `ToolRegistry.invoke()` to execute the chosen adapter. The planner is instructed to only use the memory tool for explicit recall requests (source: `app/agent/core.py`, `app/agent/toolkit.py`).
 
-```307:366:app/agent/core.py
-                step = self._plan_next_step(intent, user_query, steps, observations, intent_context)
-                if step.action and step.action != "finish":
-                    try:
-                        observation = self.tools.invoke(step.action, **step.input)
+```422:441:app/agent/core.py
+            # === Only retrieve long-term memory for explicit recall requests ===
+            if intent.name == "recall_conversation" or getattr(intent, "memory_hint", False):
+                memory_results = self.longterm_mem.search(
+                    memory_query,
+                    top_k=3,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+                ...
+```
+
+```453:462:app/agent/core.py
+                    # Prevent LLM from calling memory tool unless intent is recall_conversation
+                    if step.action == "memory" and intent.name != "recall_conversation":
+                        logger.warning(f"LLM tried to call memory tool for intent {intent.name}, skipping")
                         ...
-                    except Exception as e:
-                        return {
-                            "type": "clarification",
-                            "message": f"Tool {step.action} failed: {e}. Retry?",
-                            ...
-                        }
 ```
 
 6. **Answer synthesis & secure outbound** – the agent aggregates observations, calls `_summarize_result`, and if secure-mode is on it applies `_secure_outbound` so any masked placeholders are restored (source: `app/agent/core.py`).
@@ -263,7 +265,7 @@ async def require_bearer(authorization: str = Header(None)):
 
 ## 💾 Memory Design
 
-The project implements a three-layer memory architecture that supports both in-session and cross-session context retrieval. This design enables dynamic augmentation of conversational context, thereby enhancing the agent’s intent recognition accuracy and improving tool invocation performance.
+The project implements a three-layer memory architecture that supports both in-session and cross-session context retrieval. The design follows a selective memory retrieval strategy: short-term and session memory are always used to enhance incomplete queries, while long-term memory is only retrieved when the user explicitly requests to recall previous conversations. This approach prevents unnecessary memory access during routine tool invocations (e.g., Gmail, weather) and improves both performance and accuracy.
 
 1. **ShortTermMemory** keeps an in-RAM sliding window of the latest turns so the agent can respond immediately without hitting disk (source: `app/agent/memory.py`):
 
@@ -328,19 +330,31 @@ The project implements a three-layer memory architecture that supports both in-s
         return self.vstore.query(query, top_k, where=where)
 ```
 
-4. **Memory Integration inside the Agent** – every request reloads prior context from both RAM and SQLite, augments it with semantic recall, and after answering pushes the new transcript back into both stores (source: `app/agent/core.py`).
+4. **Memory Integration inside the Agent** – every request reloads prior context from RAM and SQLite. If the query is incomplete (contains pronouns, is very short, or lacks verbs), it is enhanced using short-term and session memory via `_enhance_query_with_context`. Long-term semantic recall is only triggered when the user explicitly requests to recall previous conversations (intent: `recall_conversation` or `memory_hint=True`). After answering, the new transcript is pushed back into both stores (source: `app/agent/core.py`).
 
-```131:152:app/agent/core.py
+```131:151:app/agent/core.py
         context = self.short_mem.get_context()
         session_ctx = self.session_mem.read(user_id, session_id, "context")
         ...
-        longterm_context = self.longterm_mem.search(
-            text,
-            top_k=3,
-            user_id=user_id,
-            session_id=session_id,
-        )
-        merged_context = self._merge_context(context, longterm_context)
+        # Enhance incomplete query with short-term and session memory
+        enhanced_query = self._enhance_query_with_context(text, context, session_data)
+        # Intent recognition without long-term memory
+        intents = self._recognize_intents(enhanced_query, context)
+```
+
+```422:441:app/agent/core.py
+            # === Only retrieve long-term memory for explicit recall requests ===
+            if intent.name == "recall_conversation" or getattr(intent, "memory_hint", False):
+                memory_results = self.longterm_mem.search(
+                    memory_query,
+                    top_k=3,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+                if memory_results:
+                    intent_context = self._merge_context(context, memory_results)
+                    ...
+                    logger.info(f"Retrieved {len(memory_results)} long-term memory results for recall request")
 ```
 
 5. **Memory Storage After Handling** - Once the agent generates a response, it persists the interaction so that future sessions resume seamlessly. The relevant logic lives near the end of `Agent.handle` (source: `app/agent/core.py`):
@@ -655,8 +669,8 @@ sequenceDiagram
 
     User->>API: {"input": "Explain the main idea of transformer models"}
     API->>Agent: handle(...)
-    Agent->>LongMem: search(query, user_id, session_id)
-    LongMem-->>Agent: memory hits[]
+    Note over Agent: Query enhancement (if needed)
+    Note over Agent: Intent recognition (without long-term memory)
     Agent->>Tools: invoke("vdb", query="Explain ...", top_k=3)
     Tools->>VDB: query(...)
     VDB-->>Tools: knowledge chunks

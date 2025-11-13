@@ -82,8 +82,8 @@ python -m scripts.ingest
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # 7. Launch Streamlit UI in another terminal
-$env:API_BASE = "http://127.0.0.1:8000"
-$env:API_TOKEN = "changeme"
+export API_BASE="http://127.0.0.1:8000"
+export API_TOKEN="my_token"   ### change the token 
 streamlit run ui/app.py
 
 ```
@@ -109,13 +109,31 @@ Additional notes:
 
 - Weather: switch to `openweather` + `OPENWEATHER_API_KEY` if needed.
 - Vector DB: `chromadb` by default, automatic in-memory fallback.
-- LLM: select one of the LLM provider in `.env`, and config with correct api token, then `app/llm/provider.py` will use the chosen one.
+- LLM: select **one** of the LLM provider in `.env`, and config with correct api token, then `app/llm/provider.py` will use the chosen one.
 - Gmail Setup 
 1. Get OAuth credentials from [Google Cloud Console](https://console.cloud.google.com/)
    - Create project → Enable Gmail API → Create OAuth 2.0 Client ID (Web application)
    - Add redirect URI: `http://127.0.0.1:8000/gmail/oauth/callback`
 2. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env`
 3. Run: `python scripts/setup_gmail_oauth.py`
+4. You may need to be added into the tester group for getting the callback URL after authorizing on the browser. Otherwise, the process cannot be completed.
+5. Example script output:
+```
+1. Checking server...
+   ✓ Server is running
+2. Checking authorization status...
+   ⚠ Not authorized yet
+3. Getting authorization URL...
+   ✓ URL generated
+4. Opening browser...
+   ✓ Browser opened
+5. After authorizing in browser, paste the callback URL or code:
+   > http://127.0.0.1:8000/xxxxxxxxx/gmail.readonly
+6. Completing authorization...
+   ✓ Authorization complete!
+
+✅ Gmail OAuth setup successful! You can now use Gmail features.
+```
 
 ---
 
