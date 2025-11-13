@@ -405,12 +405,12 @@ The agent relies on a collection of adapters exposed through `ToolRegistry`. Eac
 ```
 
 ***OAuth setup***
-<br>1. Configure `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in `.env`.
-<br>2. Launch backend: `uvicorn app.main:app --reload`.
-<br>3. Request: `GET /gmail/oauth/start?redirect_uri=http://localhost:8000/gmail/oauth/callback` and open the returned `authorization_url`.
-<br>4. Sign in with Google, capture `code` and `state`.
-<br>5. Exchange tokens: `GET /gmail/oauth/callback?code=...&state=...&redirect_uri=http://localhost:8000/gmail/oauth/callback`.
-<br>6. Credentials saved to `storage/gmail/token.json`; subsequent Gmail calls reuse them.
+1. Get OAuth credentials from [Google Cloud Console](https://console.cloud.google.com/)
+   - Create project → Enable Gmail API → Create OAuth 2.0 Client ID (Web application)
+   - Add redirect URI: `http://127.0.0.1:8000/gmail/oauth/callback`
+2. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env`
+3. Run: `python scripts/setup_gmail_oauth.py`
+
 
 3. **VDBAdapter** – Ingests documents into Chroma (or in-memory fallback) and supports semantic search (source: `app/tools/vdb.py`).
 

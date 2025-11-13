@@ -51,9 +51,6 @@ $env:API_BASE = "http://127.0.0.1:8000"
 $env:API_TOKEN = "changeme"
 streamlit run ui/app.py
 
-# Visit:
-#   API docs: http://127.0.0.1:8000/docs
-#   UI demo : http://localhost:8501
 ```
 
 ---
@@ -76,9 +73,16 @@ GOOGLE_CLIENT_SECRET=
 Additional notes:
 
 - Weather: switch to `openweather` + `OPENWEATHER_API_KEY` if needed.
-- Gmail: OAuth flow in `app/api/gmail.py` + `app/tools/gmail_oauth.py`.
 - Vector DB: `chromadb` by default, automatic in-memory fallback.
 - LLM: `app/llm/provider.py` selects provider based on `.env`.
+
+### Gmail Setup (Optional)
+
+1. Get OAuth credentials from [Google Cloud Console](https://console.cloud.google.com/)
+   - Create project → Enable Gmail API → Create OAuth 2.0 Client ID (Web application)
+   - Add redirect URI: `http://127.0.0.1:8000/gmail/oauth/callback`
+2. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env`
+3. Run: `python scripts/setup_gmail_oauth.py`
 
 ---
 
