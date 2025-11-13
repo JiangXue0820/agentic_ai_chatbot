@@ -417,14 +417,14 @@ The agent relies on a collection of adapters exposed through `ToolRegistry`. Eac
         ...
         return {"summary": summary, "count": len(emails), "emails": emails, "query": query}
 ```
-
+---
 ***OAuth setup***
 1. Get OAuth credentials from [Google Cloud Console](https://console.cloud.google.com/)
    - Create project → Enable Gmail API → Create OAuth 2.0 Client ID (Web application)
    - Add redirect URI: `http://127.0.0.1:8000/gmail/oauth/callback`
 2. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env`
 3. Run: `python scripts/setup_gmail_oauth.py`
-
+---
 
 3. **VDBAdapter** – Ingests documents into Chroma (or in-memory fallback) and supports semantic search (source: `app/tools/vdb.py`).
 
