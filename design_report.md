@@ -669,8 +669,6 @@ sequenceDiagram
 
     User->>API: {"input": "Explain the main idea of transformer models"}
     API->>Agent: handle(...)
-    Note over Agent: Query enhancement (if needed)
-    Note over Agent: Intent recognition (without long-term memory)
     Agent->>Tools: invoke("vdb", query="Explain ...", top_k=3)
     Tools->>VDB: query(...)
     VDB-->>Tools: knowledge chunks
