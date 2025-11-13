@@ -97,7 +97,7 @@ def call_agent_api(query: str, session_id: str, secure_mode: bool = False) -> di
 
     try:
         r = requests.post(
-            f"{API_BASE}/agent/invoke",
+            f"{get_api_base()}/agent/invoke",
             json={
                 "input": query,
                 "session_id": session_id,
@@ -120,7 +120,7 @@ def call_agent_api(query: str, session_id: str, secure_mode: bool = False) -> di
 def call_login_api(username: str, password: str) -> str | None:
     """Login and get access token"""
     try:
-        res = requests.post(f"{API_BASE}/auth/login", json={"username": username, "password": password}, timeout=15)
+        res = requests.post(f"{get_api_base()}/auth/login", json={"username": username, "password": password}, timeout=15)
         if res.status_code == 200:
             return res.json().get("access_token")
         elif res.status_code == 401:
@@ -331,7 +331,17 @@ else:
 
 st.sidebar.divider()
 st.sidebar.caption("⚙️ Settings")
-st.sidebar.text_input("API Base", key="api_base")
+api_base_input = st.sidebar.text_input(
+    "API Base", 
+    value=st.session_state.get("api_base", API_BASE), 
+    key="api_base",
+    help="Change the API base URL (e.g., http://127.0.0.1:8000)"
+)
+# Update session state when input changes
+if api_base_input:
+    cleaned_input = api_base_input.strip()
+    if cleaned_input and cleaned_input != st.session_state.get("api_base"):
+        st.session_state.api_base = cleaned_input
 
 if st.sidebar.button("Health Check"):
     try:
@@ -435,7 +445,7 @@ if st.session_state.get("input_to_clear") == sid:
 
 user_input = st.text_input("💬 Ask something:", placeholder="Type your question here...", key=input_key)
 
-col_secure, col_send, col_clear, col_upload = st.columns([0.5, 1, 1, 2])
+col_secure, col_send, col_upload = st.columns([0.5, 1.5, 2.5])
 
 with col_secure:
     st.session_state.secure_mode = st.toggle("Secure", value=st.session_state.secure_mode, key="secure_toggle")
@@ -443,15 +453,16 @@ with col_secure:
 with col_send:
     send_clicked = st.button("🚀 Send", use_container_width=True, key=f"send_{sid}")
 
-with col_clear:
-    clear_clicked = st.button("🧹 Clear", key=f"clear_{sid}")
+# Use a counter to force file uploader reset
+if "doc_upload_key" not in st.session_state:
+    st.session_state.doc_upload_key = 0
 
 if "doc_upload_reset" not in st.session_state:
     st.session_state.doc_upload_reset = False
 
 if st.session_state.doc_upload_reset:
-    if "doc_upload" in st.session_state:
-        del st.session_state["doc_upload"]
+    # Increment key to force Streamlit to create a new file uploader widget
+    st.session_state.doc_upload_key += 1
     st.session_state.doc_upload_reset = False
 
 with col_upload:
@@ -459,7 +470,7 @@ with col_upload:
         "📄 Upload",
         type=["pdf", "txt", "docx", "md"],
         label_visibility="collapsed",
-        key="doc_upload",
+        key=f"doc_upload_{st.session_state.doc_upload_key}",
     )
     if uploaded_file:
         file_bytes = uploaded_file.getvalue()
@@ -480,7 +491,7 @@ with col_upload:
             with st.spinner(f"Processing {uploaded_file.name}..."):
                 try:
                     res = requests.post(
-                        f"{API_BASE}/tools/vdb/ingest",
+                        f"{get_api_base()}/tools/vdb/ingest",
                         headers=headers,
                         files=files,
                         timeout=120,
@@ -500,24 +511,20 @@ with col_upload:
                             st.session_state.ingested_docs_loaded = False
                             fetch_ingested_documents(force=True)
                         st.session_state.doc_upload_reset = True
-                        time.sleep(1) 
                         st.rerun()
                     elif res.status_code == 400:
                         detail = res.json().get("detail")
                         st.warning(detail or "⚠️ File too short or unreadable.")
+                        st.session_state.doc_upload_reset = True
+                        st.rerun()
                     else:
                         st.error(f"⚠️ Upload failed: {res.status_code} — {res.text[:150]}")
+                        st.session_state.doc_upload_reset = True
+                        st.rerun()
                 except Exception as e:
                     st.error(f"❌ Upload error: {e}")
                     st.session_state.doc_upload_reset = True
                     st.rerun()
-
-if clear_clicked:
-    session["messages"].clear()
-    st.session_state.agent_pending = False
-    st.session_state.pending_request = None
-    st.session_state.pending_session = None
-    st.rerun()
 
 if send_clicked and user_input.strip():
     clean_input = user_input.strip()
@@ -537,8 +544,9 @@ if (
     query = st.session_state.pending_request
     data = call_agent_api(query, sid, st.session_state.secure_mode)
     if data:
-        if data.get("masked_input"):
-            session["messages"][-1]["masked_input"] = data["masked_input"]
+        masked_input = data.get("masked_input")
+        if masked_input:
+            session["messages"][-1]["masked_input"] = masked_input
 
         answer = data.get("answer", str(data))
         session["messages"].append({"role": "assistant", "content": answer})
