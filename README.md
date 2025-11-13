@@ -13,6 +13,41 @@ Agentic AI Chatbot is a multi-turn FastAPI service that combines reasoning, memo
 
 ---
 
+## Project Structure
+
+```
+agentic_ai_chatbot/
+├── app/
+│   ├── main.py                 # FastAPI application entry (router setup)
+│   ├── api/                    # REST routes
+│   │   ├── agent.py            # /agent/invoke endpoint
+│   │   ├── tools.py            # /tools/...
+│   │   ├── memory.py           # /memory/...
+│   │   ├── admin.py            # /admin/bootstrap, reset
+│   │   └── auth.py             # /auth/login
+│   ├── agent/                  # Agent internals & ReAct orchestration
+│   │   ├── core.py             # Agent main class
+│   │   ├── memory.py           # Memory store wrappers
+│   │   ├── planning.py         # Step, PlanTrace
+│   │   ├── intent.py           # Intent recognition
+│   │   └── toolkit.py          # ToolRegistry
+│   ├── tools/                  # External tool adapters (Gmail, Weather, VDB, Memory)
+│   ├── memory/                 # SQLite & VectorStore implementations
+│   ├── llm/                    # LLMProvider abstraction
+│   ├── security/               # Token validation helpers
+│   ├── guardrails/             # Inbound/outbound safety filters
+│   ├── schemas/                # Pydantic models
+│   └── utils/                  # Config, logging, file parsing, text splitting
+├── ui/                         # Streamlit frontend
+├── scripts/                    # Data ingestion scripts
+├── storage/                    # SQLite DBs & Chroma persistence
+├── tests/                      # Pytest coverage
+├── README.md
+└── design_report.md
+```
+
+---
+
 ## Prerequisites
 
 - Python 3.11+
@@ -74,10 +109,8 @@ Additional notes:
 
 - Weather: switch to `openweather` + `OPENWEATHER_API_KEY` if needed.
 - Vector DB: `chromadb` by default, automatic in-memory fallback.
-- LLM: `app/llm/provider.py` selects provider based on `.env`.
-
-### Gmail Setup (Optional)
-
+- LLM: select one of the LLM provider in `.env`, and config with correct api token, then `app/llm/provider.py` will use the chosen one.
+- Gmail Setup 
 1. Get OAuth credentials from [Google Cloud Console](https://console.cloud.google.com/)
    - Create project → Enable Gmail API → Create OAuth 2.0 Client ID (Web application)
    - Add redirect URI: `http://127.0.0.1:8000/gmail/oauth/callback`
@@ -93,82 +126,18 @@ Additional notes:
 curl http://127.0.0.1:8000/health
 ```
 
-### Invoke Agent
+### Streamlit UI
+
+For the best experience, use the Streamlit UI:
 ```bash
-curl -H "Authorization: Bearer changeme" \
-     -X POST http://127.0.0.1:8000/agent/invoke \
-     -H "Content-Type: application/json" \
-     -d '{"input":"Summarize my last 5 emails"}'
+streamlit run ui/app.py
 ```
 
-### Tools
-```bash
-# Weather
-curl -H "Authorization: Bearer changeme" \
-     -X POST http://127.0.0.1:8000/tools/weather/current \
-     -H "Content-Type: application/json" \
-     -d '{"city":"Singapore"}'
-
-# VDB ingest/query
-curl -H "Authorization: Bearer changeme" \
-     -X POST http://127.0.0.1:8000/tools/vdb/ingest \
-     -F "file=@docs/demo.pdf"
-
-curl -H "Authorization: Bearer changeme" \
-     -X POST http://127.0.0.1:8000/tools/vdb/query \
-     -H "Content-Type: application/json" \
-     -d '{"query":"Explain federated learning","top_k":3}'
-```
-
-### Memory API
-```bash
-curl -H "Authorization: Bearer changeme" \
-     -X POST http://127.0.0.1:8000/memory/write \
-     -H "Content-Type: application/json" \
-     -d '{"namespace":"demo","type":"short","content":"hello"}'
-
-curl -H "Authorization: Bearer changeme" \
-     http://127.0.0.1:8000/memory/read?namespace=demo&limit=5
-```
+Visit http://localhost:8501 for a friendly chat interface.
 
 ### Automated Tests
 ```bash
 pytest tests/ -v
-```
-
----
-
-## Project Structure
-
-```
-agentic_ai_chatbot/
-├── app/
-│   ├── main.py                 # FastAPI application entry (router setup)
-│   ├── api/                    # REST routes
-│   │   ├── agent.py            # /agent/invoke endpoint
-│   │   ├── tools.py            # /tools/...
-│   │   ├── memory.py           # /memory/...
-│   │   ├── admin.py            # /admin/bootstrap, reset
-│   │   └── auth.py             # /auth/login
-│   ├── agent/                  # Agent internals & ReAct orchestration
-│   │   ├── core.py             # Agent main class
-│   │   ├── memory.py           # Memory store wrappers
-│   │   ├── planning.py         # Step, PlanTrace
-│   │   ├── intent.py           # Intent recognition
-│   │   └── toolkit.py          # ToolRegistry
-│   ├── tools/                  # External tool adapters (Gmail, Weather, VDB, Memory)
-│   ├── memory/                 # SQLite & VectorStore implementations
-│   ├── llm/                    # LLMProvider abstraction
-│   ├── security/               # Token validation helpers
-│   ├── guardrails/             # Inbound/outbound safety filters
-│   ├── schemas/                # Pydantic models
-│   └── utils/                  # Config, logging, file parsing, text splitting
-├── ui/                         # Streamlit frontend
-├── scripts/                    # Data ingestion scripts
-├── storage/                    # SQLite DBs & Chroma persistence
-├── tests/                      # Pytest coverage
-├── README.md
-└── design_report.md
 ```
 
 ---
