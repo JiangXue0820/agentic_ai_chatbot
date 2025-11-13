@@ -845,9 +845,28 @@ Recent observations:
     def _direct_llm_qa(self, user_query: str, context: List[Dict[str, str]]) -> str:
         """Direct QA mode (no tool invocation)."""
         try:
-            system_prompt = (
-                "You are a helpful assistant. Answer naturally and clearly in the same language as the user."
+            # Check if context contains memory information
+            has_memory = any(
+                isinstance(msg, dict) and msg.get("role") == "system" 
+                and ("Previous memory:" in msg.get("content", "") or "Conversation recall:" in msg.get("content", ""))
+                for msg in context
             )
+            
+            if has_memory:
+                system_prompt = """You are a helpful assistant that answers questions based on retrieved conversation history.
+
+IMPORTANT: The "Previous memory:" or "Conversation recall:" section contains information that the user previously provided or discussed.
+You should use this information to answer the user's question directly and accurately.
+- If the memory contains the requested information, provide it clearly
+- Do NOT refuse to share information that was retrieved from the user's own conversation history
+- The user is asking you to recall information they previously told you, so you should share it
+
+Answer naturally and clearly in the same language as the user."""
+            else:
+                system_prompt = (
+                    "You are a helpful assistant. Answer naturally and clearly in the same language as the user."
+                )
+            
             messages = [{"role": "system", "content": system_prompt}]
             messages += context[-6:]
             messages.append({"role": "user", "content": user_query})
@@ -860,9 +879,26 @@ Recent observations:
         """Use LLM to summarize final answer."""
         if not observations:
             return "I couldn't find relevant information for your question."
-        system_prompt = (
-            "You are a helpful assistant. Combine the gathered information into a clear, natural summary."
-        )
+        
+        # Check if we have memory recall in observations
+        has_memory_recall = any("Conversation recall:" in obs or "Previous memory:" in obs for obs in observations)
+        
+        # Adjust system prompt based on whether we have memory recall
+        if has_memory_recall:
+            system_prompt = """You are a helpful assistant that answers questions based on retrieved conversation history.
+
+IMPORTANT: The "Conversation recall:" section contains information that the user previously provided or discussed. 
+You should use this information to answer the user's question directly and accurately.
+- If the recall contains the requested information, provide it clearly
+- Do NOT refuse to share information that was retrieved from the user's own conversation history
+- The user is asking you to recall information they previously told you, so you should share it
+
+Combine the gathered information into a clear, natural answer that addresses the user's query."""
+        else:
+            system_prompt = (
+                "You are a helpful assistant. Combine the gathered information into a clear, natural summary."
+            )
+        
         summary_context = f"User query: {user_query}\n\n" + "\n".join(observations[-5:])
         messages = [
             {"role": "system", "content": system_prompt},

@@ -1,5 +1,7 @@
 ﻿import logging
 import re
+import sys
+import io
 from pathlib import Path
 from datetime import datetime
 
@@ -25,7 +27,20 @@ def configure_logging():
     - Daily rotating file with timestamp
     - PII masking for security
     - UTF-8 encoding for international characters
+    - Windows console UTF-8 encoding support
     """
+    # Set console output to UTF-8 encoding (especially for Windows)
+    if sys.platform == "win32":
+        try:
+            # Wrap stdout and stderr with UTF-8 encoding
+            if hasattr(sys.stdout, 'buffer'):
+                sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            if hasattr(sys.stderr, 'buffer'):
+                sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        except Exception:
+            # If wrapping fails, continue with default encoding
+            pass
+    
     # Create logs directory
     log_dir = Path("./logs")
     log_dir.mkdir(exist_ok=True)
