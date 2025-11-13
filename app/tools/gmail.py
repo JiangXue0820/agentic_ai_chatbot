@@ -5,6 +5,7 @@ Provides email access functionality via Gmail API.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from email.header import decode_header
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import List, Dict, Any, Optional
@@ -14,6 +15,8 @@ from googleapiclient.errors import HttpError
 
 from app.tools.gmail_oauth import ensure_credentials
 from app.utils.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class GmailAdapter:
@@ -52,7 +55,19 @@ class GmailAdapter:
         except (TypeError, ValueError):
             count = 5
         query = kwargs.get("filter")
-        emails = self.list_recent(limit=count, query=query)
+        
+        try:
+            emails = self.list_recent(limit=count, query=query)
+        except RuntimeError as e:
+            error_msg = str(e)
+            logger.error(f"Gmail access failed: {error_msg}", exc_info=True)
+            if "not authorized" in error_msg.lower() or "authentication" in error_msg.lower():
+                return {"error": "Gmail account not authorized. Please complete OAuth authorization first."}
+            return {"error": f"Gmail access failed: {error_msg}"}
+        except Exception as e:
+            logger.error(f"Unexpected error accessing Gmail: {e}", exc_info=True)
+            return {"error": f"Failed to access Gmail: {str(e)}"}
+        
         summary = f"Retrieved {len(emails)} recent email(s)"
         if query:
             summary += f" matching query '{query}'"

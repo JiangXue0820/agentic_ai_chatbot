@@ -143,11 +143,20 @@ class WeatherAdapter:
     
     def _geocode(self, city: str) -> tuple[float, float]:
         """Convert city name to coordinates."""
-        g = requests.get(
-            "https://geocoding-api.open-meteo.com/v1/search",
-            params={"name": city, "count": 1},
-            timeout=self.TIMEOUT
-        ).json()
+        try:
+            response = requests.get(
+                "https://geocoding-api.open-meteo.com/v1/search",
+                params={"name": city, "count": 1},
+                timeout=self.TIMEOUT
+            )
+            response.raise_for_status()
+            g = response.json()
+        except requests.Timeout:
+            raise ValueError(f"Geocoding request timed out for '{city}'. Please try again.")
+        except requests.RequestException as e:
+            raise ValueError(f"Failed to connect to geocoding service: {str(e)}")
+        except ValueError as e:  # JSON decode error
+            raise ValueError(f"Invalid response from geocoding service: {str(e)}")
         
         if not g.get("results"):
             raise ValueError(f"City '{city}' not found")

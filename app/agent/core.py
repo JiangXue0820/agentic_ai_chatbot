@@ -142,12 +142,16 @@ class Agent:
             logger.warning(f"Failed to parse session context: {e}")
 
         # === 2. Retrieve long-term recall ===
-        longterm_context = self.longterm_mem.search(
-            text,
-            top_k=3,
-            user_id=user_id,
-            session_id=session_id,
-        )
+        try:
+            longterm_context = self.longterm_mem.search(
+                text,
+                top_k=3,
+                user_id=user_id,
+                session_id=session_id,
+            )
+        except Exception as e:
+            logger.error(f"Long-term memory search failed: {e}", exc_info=True)
+            longterm_context = []
         merged_context = self._merge_context(context, longterm_context)
 
         # === 3. Intent recognition ===
@@ -206,6 +210,14 @@ class Agent:
         # === 4. Plan and execute ===
         result = self._plan_and_execute(user_id, text, intents, merged_context, session_id)
         logger.debug(f"Plan and execute result: {result.get('type')} | steps={len(result.get('steps', []))}")
+        
+        # Ensure result has answer field
+        if not result.get("answer"):
+            if result.get("type") == "clarification":
+                result["answer"] = result.get("message", "Sorry, I don't understand your question.")
+            else:
+                result["answer"] = "Sorry, I encountered an issue while processing your request. Please try again."
+        
         if result.get("type") == "clarification":
             result["steps"] = result.get("steps", [])
             result["intents"] = [asdict(i) for i in intents] if isinstance(intents, list) else []
@@ -220,10 +232,13 @@ class Agent:
             return result
 
         # === 5. Update memories ===
-        self.short_mem.add("user", text)
-        self.short_mem.add("assistant", result.get("answer", ""))
-        updated_context = self.short_mem.get_context()
+        try:
+            self.short_mem.add("user", text)
+            self.short_mem.add("assistant", result.get("answer", ""))
+        except Exception as e:
+            logger.error(f"Failed to update short-term memory: {e}", exc_info=True)
 
+        updated_context = self.short_mem.get_context()
         prev_saved = session_data.get("longterm_saved", 0)
 
         session_data = {
@@ -233,11 +248,18 @@ class Agent:
             "clarification_pending": None,
             "longterm_saved": len(updated_context)
         }
-        self.session_mem.write(user_id, session_id, "context", json.dumps(session_data), None)
+        
+        try:
+            self.session_mem.write(user_id, session_id, "context", json.dumps(session_data), None)
+        except Exception as e:
+            logger.error(f"Failed to write session memory: {e}", exc_info=True)
 
-        if prev_saved < len(updated_context):
-            new_messages = updated_context[prev_saved:]
-            self.longterm_mem.store_conversation(user_id, session_id, new_messages, start_index=prev_saved)
+        try:
+            if prev_saved < len(updated_context):
+                new_messages = updated_context[prev_saved:]
+                self.longterm_mem.store_conversation(user_id, session_id, new_messages, start_index=prev_saved)
+        except Exception as e:
+            logger.error(f"Failed to store long-term memory: {e}", exc_info=True)
 
         logger.info("Memory updated successfully.")
 
@@ -519,6 +541,11 @@ class Agent:
 
         answer = self._summarize_result(user_query, steps, observations)
         logger.debug(f"Final summarized answer: {answer}")
+        
+        # Ensure answer is not empty
+        if not answer or not answer.strip():
+            answer = "Sorry, I couldn't generate a proper response. Please try rephrasing your question."
+        
         citation_entries = self._collect_citations(used_tools)
         if citation_entries:
             answer = self._append_citation_block(answer, citation_entries)
