@@ -76,7 +76,7 @@ copy env.example .env               # or: cp env.example .env
 # Edit .env with your API_TOKEN, LLM_PROVIDER, Gmail creds, etc.
 
 # 5. (Optional) Setup gmail authorization
-# Follow 
+# Follow the insturction below "Environment Configuration → Gmail OAuth Setup Steps
 python scripts/setup_gmail_oauth.py
 
 # 6. Launch FastAPI
@@ -175,6 +175,14 @@ curl http://127.0.0.1:8000/gmail/oauth/status
 ```
 You will see `{"authorized":true}` if the system is setup correctly. 
 ---
+
+5. **Additional Notes**
+* The redirect URI must exactly match what's configured in Google Console, which is http://127.0.0.1:8000/gmail/oauth/callback in this project
+* When running `python scripts/setup_gmail_oauth.py`, if the authorization is blocked, saying the account is not finished verify:
+   - Go to "APIs & Services" → "Credentials"
+   - Select the OAuth 2.0 Client IDs and enter
+   - Go to "Audience"  → For Test users, click "Add users" and input the gmail account
+
 
 ## Running & Testing
 
