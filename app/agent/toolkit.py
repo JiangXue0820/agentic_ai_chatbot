@@ -33,30 +33,35 @@ class ToolRegistry:
         """
         descriptions = {}
         for name, tool in self.tools.items():
-            doc = getattr(tool, "__doc__", "") or "No description provided."
-            descriptions[name] = {
-                "description": doc.strip().split("\n")[0],
-                "methods": [
-                    fn for fn in dir(tool)
-                    if not fn.startswith("_") and callable(getattr(tool, fn))
-                ]
+            # 优先使用 description 属性，否则使用 docstring 第一行
+            description = getattr(tool, "description", None)
+            if not description:
+                doc = getattr(tool, "__doc__", "") or "No description provided."
+                description = doc.strip().split("\n")[0]
+            
+            tool_desc = {
+                "description": description,
             }
+            
+            # 包含 parameters schema（重要！让 LLM 知道正确的参数名）
+            parameters = getattr(tool, "parameters", None)
+            if parameters and isinstance(parameters, dict):
+                tool_desc["parameters"] = parameters
+            
+            descriptions[name] = tool_desc
+        
         return descriptions
 
     # -----------------------------------------------------
     # Tool invocation
     # -----------------------------------------------------
     def invoke(self, tool_name: str, **kwargs) -> Dict[str, Any]:
-        """
-        Safely invoke a registered tool by name.
+        # Handle "tool.method" format - extract tool name
+        if "." in tool_name:
+            parts = tool_name.split(".", 1)
+            tool_name = parts[0]
+            logger.debug(f"Extracted tool '{tool_name}' from '{parts[0]}.{parts[1]}'")
         
-        Args:
-            tool_name: Key name in the registry (e.g. 'weather', 'gmail', 'vdb')
-            **kwargs: Parameters passed to the tool method
-
-        Returns:
-            A structured dict with either results or error message.
-        """
         if tool_name not in self.tools:
             logger.warning(f"Tool '{tool_name}' not found in registry")
             return {"error": f"Unknown tool: {tool_name}"}
@@ -69,6 +74,7 @@ class ToolRegistry:
         params_payload = call_kwargs.pop("params", None)
         if isinstance(params_payload, dict):
             call_kwargs = {**params_payload, **call_kwargs}
+
 
         method = None
         candidate_methods = []

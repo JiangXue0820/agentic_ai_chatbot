@@ -354,24 +354,33 @@ class Agent:
         
         # Use LLM to enhance query with context
         try:
-            system_prompt = """You are a query enhancement assistant. If the user's query is incomplete or refers to previous context, enhance it by incorporating relevant information from the conversation history. If the query is already complete, return it as-is.
+            system_prompt = """You are a query enhancement assistant. Your job is to ONLY enhance queries that are genuinely incomplete.
 
-Return only the enhanced query, no explanations."""
+    ULES:
+    1. If query is complete (like "Summarize my last 5 emails"), return it EXACTLY as-is.
+    2. ONLY add information that directly resolves pronouns from the conversation history.
+    3. Do NOT add unrelated topics or context that doesn't directly relate to the current query.
+    4. If the conversation history is not relevant to the current query, return the original query unchanged.
+
+    Return ONLY the enhanced query (or original if no enhancement needed), no explanations, no additional text."""
             
             context_text = "\n".join(context_summary)
-            user_prompt = f"""Conversation history:
-{context_text}
+            user_prompt = f"""Conversation history (for reference only):
+    {context_text}
 
-User's current query: {query}
+    User's current query: {query}
 
-Enhance the query if it's incomplete or refers to previous context. Return only the enhanced query."""
+    Enhance the query ONLY if it contains pronouns that need resolution or is a clear fragment. 
+    If the query is already complete (like "Summarize my last 5 emails"), return it exactly as-is without adding unrelated context.
+    Return only the enhanced query."""
             
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
-            
+                
             enhanced = self.llm.chat(messages)
+            logger.info(f"Enhanced query: {enhanced}")
             enhanced = enhanced.strip()
             
             # Only use enhanced query if it's meaningfully different and longer
@@ -658,16 +667,46 @@ Enhance the query if it's incomplete or refers to previous context. Return only 
             tool_info = self.tools.describe()
             system_prompt = f"""
 You are a reasoning assistant that plans step-by-step actions to complete user intents.
-You have access to these tools:
+
+Available tools:
 {json.dumps(tool_info, indent=2)}
 
-IMPORTANT RULES:
-1. Only use the 'memory' tool when the intent is 'recall_conversation' or when the user explicitly asks to recall previous conversations.
-2. Do NOT use 'memory' for other intents like:
-   - summarize_emails: Use 'gmail' tool directly
-   - get_weather: Use 'weather' tool directly
-   - query_knowledge: Use 'vdb' tool directly
-   - general_qa: Answer directly without tools
+CRITICAL TOOL USAGE RULES:
+
+1. TOOL NAME: Use ONLY the tool name in "action" field (e.g., "weather", "gmail", "vdb", "memory")
+   - The system automatically finds the right method to call
+   - Do NOT use "tool.method" format
+
+2. PARAMETERS: Pass parameters DIRECTLY in "input" as key-value pairs
+   - Use parameter names from "parameters.properties" schema above
+   - Check "required" array for mandatory parameters
+   - Do NOT nest parameters in "params" or "method" fields
+
+EXAMPLES:
+
+Weather query:
+{{
+  "thought": "User wants weather in Singapore",
+  "action": "weather",
+  "input": {{"location": "Singapore"}},
+  "decide_next": false
+}}
+
+Email summary:
+{{
+  "thought": "User wants last 5 emails",
+  "action": "gmail",
+  "input": {{"count": 5}},
+  "decide_next": false
+}}
+
+Knowledge search:
+{{
+  "thought": "User wants to search knowledge base about machine learning",
+  "action": "vdb",
+  "input": {{"query": "What is machine learning?", "top_k": 5}},
+  "decide_next": false
+}}
 
 Respond in JSON:
 {{

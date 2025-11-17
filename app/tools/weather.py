@@ -30,53 +30,40 @@ class WeatherAdapter:
         "properties": {
             "location": {
                 "type": "string",
-                "description": "City name (e.g., 'Singapore', 'Tokyo', 'New York')",
-                "required": False
-            },
-            "city": {
-                "type": "string",
-                "description": "City name (alias for 'location')",
-                "required": False
-            },
-            "lat": {
-                "type": "number",
-                "description": "Latitude coordinate",
-                "required": False
-            },
-            "lon": {
-                "type": "number",
-                "description": "Longitude coordinate",
-                "required": False
+                "description": "City name or location (e.g., 'Singapore', 'Tokyo', 'New York'). Required.",
+                "required": True
             },
             "date": {
                 "type": "string",
-                "description": "Date string like 'today', 'tomorrow', 'yesterday', or YYYY-MM-DD",
+                "description": "Date string like 'today', 'tomorrow', 'yesterday', or YYYY-MM-DD. Optional - defaults to 'today' if not provided.",
                 "required": False
             },
             "days_offset": {
                 "type": "integer",
-                "description": "Days from today (positive=future, negative=past)",
+                "description": "Days from today (positive=future, negative=past). Optional - defaults to 0 (today) if not provided. Use either 'date' or 'days_offset', not both.",
                 "required": False
             }
         },
-        "required": []
+        "required": ["location"]
     }
     
     def run(self, **kwargs) -> Dict[str, Any]:
         """
-        Unified entry point for the tool.
+        Unified entry point for the weather tool.
+        
+        Args:
+            location: City name or location (required)
+            date: Optional date string (defaults to 'today')
+            days_offset: Optional days offset (defaults to 0)
         
         Returns:
-            Dict with:
-                - temperature: Temperature in Celsius
-                - humidity: Humidity percentage
-                - condition: Weather condition description
-                OR
-                - error: Error message if date out of range
+            Dict with temperature, humidity, condition, location, and date,
+            or error message if location not found or date out of range.
         """
-        location = kwargs.get("location") or kwargs.get("city")
-        lat = kwargs.get("lat")
-        lon = kwargs.get("lon")
+        location = kwargs.get("location")
+        if not location:
+            return {"error": "Location is required. Please provide a city name or location."}
+        
         date_str = kwargs.get("date")
         days_offset = kwargs.get("days_offset")
         
@@ -96,15 +83,11 @@ class WeatherAdapter:
                 "error": f"Only support historical weather up to {self.MAX_HISTORICAL_DAYS} days in the past. You requested {abs(days_diff)} days ago."
             }
         
-        # Geocode city to coordinates
-        if location and (lat is None or lon is None):
-            try:
-                lat, lon = self._geocode(location)
-            except ValueError as e:
-                return {"error": str(e)}
-        
-        if lat is None or lon is None:
-            return {"error": "Location not specified"}
+        # Geocode location to coordinates (always geocode, no need to check lat/lon)
+        try:
+            lat, lon = self._geocode(location)
+        except ValueError as e:
+            return {"error": str(e)}
         
         # Get weather based on date
         try:

@@ -4,8 +4,25 @@ from app.agent.memory import LongTermMemoryStore
 
 
 class ConversationMemoryAdapter:
-    """Adapter that retrieves conversation history from long-term memory."""
-
+    """
+    Adapter that retrieves conversation history from long-term memory.
+    
+    Use this tool ONLY when the user explicitly asks to recall previous conversations.
+    Do NOT use for other intents like email summarization or weather queries.
+    
+    Parameters (passed directly to 'input', not nested):
+    - user_id (str, required): User identifier
+    - session_id (str, required): Session identifier
+    - query (str, optional): Optional text to focus the recall
+    - top_k (int, optional): Maximum number of recalled snippets (default: 5, max: 10)
+    
+    Example usage in planning:
+    {
+      "action": "memory",
+      "input": {"user_id": "user123", "session_id": "session456", "query": "previous discussion about transformers"}
+    }
+    """
+    
     description = "Retrieve conversation history from stored long-term memory"
 
     parameters = {

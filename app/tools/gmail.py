@@ -20,7 +20,21 @@ logger = logging.getLogger(__name__)
 
 
 class GmailAdapter:
-    """Gmail email retrieval tool backed by the Gmail REST API."""
+    """
+    Gmail email retrieval tool backed by the Gmail REST API.
+    
+    Use this tool to access and summarize emails from Gmail inbox.
+    
+    Parameters (passed directly to 'input', not nested):
+    - count (int): Number of recent emails to retrieve (default: 5, max: 50)
+    - filter (str, optional): Gmail search query (e.g., 'is:unread from:someone@example.com')
+    
+    Example usage in planning:
+    {
+      "action": "gmail",
+      "input": {"count": 5, "filter": "is:unread"}
+    }
+    """
     
     description = "Access Gmail inbox to read and summarize recent emails"
     
@@ -33,11 +47,6 @@ class GmailAdapter:
                 "default": 5,
                 "minimum": 1,
                 "maximum": 50,
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Alias for 'count' parameter",
-                "default": 5,
             },
             "filter": {
                 "type": "string",

@@ -59,13 +59,18 @@ class VDBAdapter:
     Provides semantic search over ingested documents using embeddings.
     Powered by ChromaDB with sentence-transformers for embeddings.
     
-    Attributes:
-        description: Human-readable description of the tool
-        parameters: JSON schema defining the tool's parameters
-        store: KnowledgeBaseStore instance for document storage and retrieval
+    Parameters (passed directly to 'input', not nested):
+    - query (str, required): Search query or question to find relevant knowledge
+    - top_k (int, optional): Number of most relevant results to return (default: 3, max: 10)
+    - k (int, optional): Alias for 'top_k' parameter
+    
+    Example usage in planning:
+    {
+      "action": "vdb",
+      "input": {"query": "What is machine learning?", "top_k": 5}
+    }
     """
     
-    # Tool metadata for ToolRegistry
     description = "Search knowledge base using semantic similarity to find relevant information"
     
     parameters = {
