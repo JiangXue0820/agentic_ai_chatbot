@@ -174,7 +174,6 @@ After setup, the access token will be saved in storage/gmail/token.json. You can
 curl http://127.0.0.1:8000/gmail/oauth/status
 ```
 You will see `{"authorized":true}` if the system is setup correctly. 
----
 
 5. **Additional Notes**
 * The redirect URI must exactly match what's configured in Google Console, which is http://127.0.0.1:8000/gmail/oauth/callback in this project
