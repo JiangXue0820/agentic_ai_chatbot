@@ -177,10 +177,11 @@ You will see `{"authorized":true}` if the system is setup correctly.
 
 5. **Additional Notes**
 * The redirect URI must exactly match what's configured in Google Console, which is http://127.0.0.1:8000/gmail/oauth/callback in this project
-* When running `python scripts/setup_gmail_oauth.py`, if the authorization is blocked, saying the account is not finished verify:
-   - Go to "APIs & Services" → "Credentials"
-   - Select the OAuth 2.0 Client IDs and enter
-   - Go to "Audience"  → For Test users, click "Add users" and input the gmail account
+* **Troubleshooting authorization errors**: If authorization is blocked with "This app isn't verified" or "Account not finished verify":
+   - Go to "APIs & Services" → "OAuth consent screen"
+   - Scroll to "Test users" section
+   - Click "Add users" and enter your Gmail address
+   - Save and try the authorization again
 
 
 ## Running & Testing
