@@ -75,8 +75,9 @@ pip install -r requirements.txt
 copy env.example .env               # or: cp env.example .env
 # Edit .env with your API_TOKEN, LLM_PROVIDER, Gmail creds, etc.
 
-# 5. (Optional) Ingest demo knowledge base
-python -m scripts.ingest
+# 5. (Optional) Setup gmail authorization
+# Follow 
+python scripts/setup_gmail_oauth.py
 
 # 6. Launch FastAPI
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -95,30 +96,60 @@ streamlit run ui/app.py
 `.env` (partial):
 
 ```
-API_TOKEN=changeme
+API_TOKEN=changeme         # needs to be changed to your secrete key
 LLM_PROVIDER=mock          # mock | deepseek | gemini | openai
-DEEPSEEK_API_KEY=
+DEEPSEEK_API_KEY=          # the API key of the chosen LLM_PROVIDER should be provided
 GEMINI_API_KEY=
 OPENAI_API_KEY=
 WEATHER_API=open-meteo
-GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_ID=          # Check Gmail OAuth Setup Steps in below to get the ID and Secrete
 GOOGLE_CLIENT_SECRET=
 ```
 
-Additional notes:
+### Additional notes:
 
-- Weather: switch to `openweather` + `OPENWEATHER_API_KEY` if needed.
-- Vector DB: `chromadb` by default, automatic in-memory fallback.
-- LLM: select **one** of the LLM provider in `.env`, and config with correct api token, then `app/llm/provider.py` will use the chosen one.
-- Gmail Setup 
-1. Get OAuth credentials from [Google Cloud Console](https://console.cloud.google.com/)
-   - Create project → Enable Gmail API → Create OAuth 2.0 Client ID (Web application)
-   - Add redirect URI: `http://127.0.0.1:8000/gmail/oauth/callback`
-2. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to `.env`
-3. Run: `python scripts/setup_gmail_oauth.py`
-4. You may need to be added into the tester group for getting the callback URL after authorizing on the browser. Otherwise, the process cannot be completed.
-5. Example script output:
+#### Weather
+
+Switch to `openweather` + `OPENWEATHER_API_KEY` if needed.
+
+#### LLM
+
+Select **one** of the LLM provider in `.env`, and config with correct api token, then `app/llm/provider.py` will use the chosen one.
+
+#### Gmail OAuth Setup Steps
+
+1. **Get OAuth Credentials in Google Cloud Console**
+* Go to [Google Cloud Console](https://console.cloud.google.com/)
+* Create a project (or select an existing one)
+* Enable Gmail API:
+   - Go to "APIs & Services" → "Library"
+   - Search for "Gmail API" and enable it
+* Create OAuth 2.0 Client ID:
+   - Go to "APIs & Services" → "Credentials"
+   - Click "Create Credentials" → "OAuth client ID" (For the first time, you need to "Configure consent screen")
+   - Application type: "Web application"
+   - Add authorized redirect URI: http://127.0.0.1:8000/gmail/oauth/callback
+   - Click "Create"; Save and copy the Client ID and Client Secret in .env
+```bash
+# .env
+GOOGLE_CLIENT_ID=your_client_id_here
+GOOGLE_CLIENT_SECRET=your_client_secret_here
 ```
+
+2. **Start the API Server**
+Make sure the server is running:
+```bash
+uvicorn app.main:app --reload
+```
+The server should be running at http://127.0.0.1:8000
+
+3. **Run the OAuth Setup Script**
+Open another terminal, and run the following script: 
+```bash
+python scripts/setup_gmail_oauth.py
+```
+Example script output:
+```bash
 1. Checking server...
    ✓ Server is running
 2. Checking authorization status...
@@ -126,7 +157,8 @@ Additional notes:
 3. Getting authorization URL...
    ✓ URL generated
 4. Opening browser...
-   ✓ Browser opened
+   # The browser will automatically opened, and you need to select the correct account and consent
+   ✓ Browser opened   
 5. After authorizing in browser, paste the callback URL or code:
    > http://127.0.0.1:8000/xxxxxxxxx/gmail.readonly
 6. Completing authorization...
@@ -134,7 +166,14 @@ Additional notes:
 
 ✅ Gmail OAuth setup successful! You can now use Gmail features.
 ```
+After the authorization step is done, you will find a new file in `.\storage\gmail\token.json`
 
+4. **Verify Setup**
+After setup, the access token will be saved in storage/gmail/token.json. You can verify by:
+```bash
+curl http://127.0.0.1:8000/gmail/oauth/status
+```
+You will see `{"authorized":true}` if the system is setup correctly. 
 ---
 
 ## Running & Testing
